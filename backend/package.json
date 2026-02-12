@@ -1,0 +1,13 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "hardhat": "^2.22.1"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.4",
+    "web3": "^4.16.0"
+  }
+}

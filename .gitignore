@@ -1,0 +1,23 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Node
+node_modules/
+
+# Hardhat
+artifacts/
+cache/
+
+# Blockchain node
+node1/
+backend/node1/
+
+# Model AI
+backend/lora_model_herbal/
+
+# OS
+.DS_Store
+Thumbs.db
