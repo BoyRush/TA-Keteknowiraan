@@ -88,22 +88,34 @@ export const AuthProvider = ({ children }) => {
                 address: currentAddress.toLowerCase() 
             });
             
-            const userRole = response.data.role;
+            const userRole = response.data.role; // Ini bisa 'none', 'patient', 'doctor', dll
             setUser({ address: currentAddress, role: userRole });
 
-            // 3. LOGIKA NAVIGASI (Pindah Halaman Otomatis)
+            // --- LOGIKA NAVIGASI (DIPERBARUI) ---
             if (userRole === 'herbal_doctor') {
                 router.push('/herbs/dashboard');
             } else if (userRole === 'doctor') {
                 router.push('/doctor/dashboard');
             } else if (userRole === 'patient') {
                 router.push('/patient/dashboard');
+            } else if (userRole === 'admin') {
+                router.push('/admin/dashboard');
+            } else if (userRole === 'none') {
+                // INI YANG HILANG: Jika belum daftar, lempar ke register
+                console.log("User belum terdaftar, mengarahkan ke registrasi...");
+                router.push('/register');
             }
             
         } catch (error) {
             console.error("Login Error:", error);
-            setUser({ address: null, role: null });
-            router.push('/'); // Jika error balik ke home
+            // Jika backend Flask kirim error 404 (Alamat belum terdaftar)
+            if (error.response && error.response.status === 404) {
+                setUser({ address: currentAddress, role: 'none' });
+                router.push('/register');
+            } else {
+                setUser({ address: null, role: null });
+                router.push('/'); 
+            }
         } finally {
             setLoading(false);
         }

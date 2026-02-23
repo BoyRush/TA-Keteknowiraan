@@ -57,41 +57,53 @@ export default function DoctorDashboard() {
         }
     };
 
-    const handleSaveMedicalData = async (e) => {
+const handleSaveMedicalData = async (e) => {
     e.preventDefault();
     setTxLoading(true);
     try {
-        // 1. Kirim data mentah ke Backend Flask agar di-upload ke IPFS
-        const response = await fetch("http://127.0.0.1:5000/medical/store", {
+        console.log("1. Mengirim data ke Flask...");
+        const response = await fetch("http://127.0.0.1:5000/medical/ipfs-only", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                patient_address: patientAddr.toLowerCase().trim(),
-                diagnosis: medicalData, // Teks "vertigo" dari textarea
-                symptoms: "Keluhan utama pasien", // Bisa ditambah field jika mau
-                treatment: "Rencana pengobatan"
+                diagnosis: medicalData,
+                patient_address: patientAddr.toLowerCase().trim()
             })
         });
 
         const result = await response.json();
+        const cid = result.ipfs_cid;
+        console.log("2. CID dari IPFS didapat:", cid);
 
-        if (response.ok) {
-            // 2. LOG PEMBUKTIAN (Sekarang data mentah diganti dengan CID yang didapat dari Flask)
-            logDataSource(result.ipfs_cid); 
+        if (!cid) throw new Error("Gagal mendapatkan CID dari IPFS");
 
-            console.log("Transaksi Blockchain Berhasil via Backend:", result.tx_hash);
-            alert(`✅ Sukses!\nData tersimpan di IPFS: ${result.ipfs_cid}\nBlockchain TX: ${result.tx_hash}`);
-            
-            setMedicalData('');
-            setPatientAddr('');
-        } else {
-            throw new Error(result.error || "Gagal menyimpan ke server");
-        }
-    } catch (error) { 
-        console.error("Detail Error:", error);
-        alert(`❌ Gagal: ${error.message}`); 
-    } finally { 
-        setTxLoading(false); 
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const signer = provider.getSigner();
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
+
+        console.log("3. Mengirim ke Blockchain untuk Pasien:", patientAddr);
+        
+        // PASTIKAN URUTANNYA: (Alamat Pasien, Kode CID)
+        const tx = await contract.storeMedicalRecord(
+            ethers.utils.getAddress(patientAddr.toLowerCase().trim()), 
+            cid
+        );
+        
+        console.log("4. Menunggu konfirmasi Blockchain (Gas dikirim)...");
+        const receipt = await tx.wait();
+        
+        console.log("5. Transaksi Sukses! Receipt:", receipt);
+        alert(`Berhasil! Data tersimpan dengan CID: ${cid}`);
+
+        // Reset form agar tidak double submit
+        setMedicalData('');
+        setPatientAddr('');
+
+    } catch (error) {
+        console.error("❌ ERROR DI DOKTER:", error);
+        alert(`Gagal: ${error.message}`);
+    } finally {
+        setTxLoading(false);
     }
 };
 

@@ -21,58 +21,107 @@ export default function PatientDashboard() {
         }
     }, [role, loading, router]);
 
+    const fetchFromIPFS = async (cid) => {
+        try {
+            // Kita ambil data dari Gateway IPFS lokal kamu
+            const response = await fetch(`http://127.0.0.1:8080/ipfs/${cid}`);
+            const data = await response.json();
+            // Asumsi data di IPFS bentuknya: { diagnosis: "Vertigo", patient_address: "..." }
+            return data.diagnosis || data; 
+        } catch (error) {
+            console.error("Gagal ambil data IPFS:", error);
+            return "Gagal memuat teks diagnosa";
+        }
+    };
     // FUNGSI UTAMA: Load semua data dari Blockchain
     const loadRequests = async () => {
         if (!window.ethereum || !address) return;
 
         try {
             const provider = new ethers.providers.Web3Provider(window.ethereum);
-            
-            // --- PERBAIKAN DI SINI ---
-            // Ambil signer agar msg.sender terbaca oleh Smart Contract
             const signer = provider.getSigner();
             const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-            // -------------------------
-            
             const patientChecksum = ethers.utils.getAddress(address.toLowerCase());
-            
-            // Pastikan alamat ini adalah Account (1) di Ganache kamu
-            const doctorAddr = "0xbef4a50d20216f69482f0545ac35ce3be2ad89a2";
-            const doctorChecksum = ethers.utils.getAddress(doctorAddr.toLowerCase());
 
-            console.log("Memanggil data untuk Pasien:", patientChecksum, "dan Dokter:", doctorChecksum);
+            // 1. Ambil CID dari Blockchain
+            const records = await contract.getMedicalRecords(patientChecksum); 
 
-            // 1. Tarik status izin
-            // Fungsi ini sekarang tidak akan 'Access denied' karena sudah membawa identitas (signer)
-            const rawPending = await contract.pendingRequests(patientChecksum, doctorChecksum);
-            const rawAccess = await contract.checkAccess(patientChecksum, doctorChecksum);
+            // 2. "Terjemahkan" CID menjadi Teks secara otomatis
+            const formattedRecords = await Promise.all(records.map(async (r) => {
+                try {
+                    // Minta bantuan Flask untuk ambil isi IPFS
+                    const res = await fetch(`http://localhost:5000/medical/get-content?cid=${r.cid}`);
+                    const textData = await res.text();
+                    
+                    // Jika data IPFS kamu berbentuk JSON, kita parse. Jika teks biasa, langsung pakai.
+                    let diagnosisText;
+                    try {
+                        const json = JSON.parse(textData);
+                        diagnosisText = json.diagnosis || textData;
+                    } catch {
+                        diagnosisText = textData;
+                    }
 
-            setApprovedDocs(rawAccess ? [doctorChecksum] : []);
-            if (rawAccess) {
-                setPendingDocs([]);
-            } else {
-                setPendingDocs(rawPending ? [doctorChecksum] : []);
-            }
+                    return {
+                        cid: r.cid,
+                        timestamp: r.timestamp.toNumber(),
+                        doctor: r.createdBy,
+                        diagnosis: diagnosisText // Simpan teks aslinya di sini
+                    };
+                } catch (err) {
+                    return { cid: r.cid, timestamp: r.timestamp.toNumber(), doctor: r.createdBy, diagnosis: "Gagal memuat teks" };
+                }
+            }));
 
-            // 2. Tarik Data Rekam Medis
-            // Menggunakan address pasien saat ini untuk menarik data miliknya sendiri
-            const records = await contract.getMedicalRecords(patientChecksum);
-            console.log("=== DATA MEDIS DARI BLOCKCHAIN ===", records);
-            setMedicalRecords(records);
+            setMedicalRecords(formattedRecords);
+            console.log("✅ Data Medis & Diagnosa Berhasil Dimuat");
 
         } catch (error) {
-            console.error("Gagal baca data blockchain:", error);
-            // Tips: Lihat di console jika ada "revert Access denied" lagi, 
-            // pastikan alamat wallet di MetaMask sama dengan patientChecksum
+            console.error("Gagal load data:", error);
         }
     };
 
-    const handleGetAIRecommendation = async () => {
-        setIsRecommending(true);
+    // 1. Fungsi Menolak (Reject)
+    const handleReject = async (docAddr) => {
+        setIsProcessing(true);
         try {
-            // Ambil data medis terakhir dari state medicalRecords yang sudah kita buat tadi
-            // Kita gabungkan semua diagnosa menjadi string (contoh: "Hipertensi, Jantung")
-            const kondisiMedis = medicalRecords.map(r => r.cid).join(', ');
+            const provider = new ethers.providers.Web3Provider(window.ethereum);
+            const signer = provider.getSigner();
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
+            
+            const tx = await contract.rejectAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
+            await tx.wait();
+            alert("Permintaan dokter telah ditolak!");
+            await loadRequests(); // Refresh data
+        } catch (error) { console.error(error); }
+        finally { setIsProcessing(false); }
+    };
+
+    // 2. Fungsi Mencabut Izin (Revoke)
+    const handleRevoke = async (docAddr) => {
+        setIsProcessing(true);
+        try {
+            const provider = new ethers.providers.Web3Provider(window.ethereum);
+            const signer = provider.getSigner();
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
+            
+            const tx = await contract.revokeAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
+            await tx.wait();
+            alert("Izin dokter telah dicabut!");
+            await loadRequests(); // Refresh data
+        } catch (error) { console.error(error); }
+        finally { setIsProcessing(false); }
+    };
+
+    const handleGetAIRecommendation = async () => {
+        // 1. RESET HASIL SEBELUMNYA (Agar tidak muncul jawaban lama)
+        setRekomendasi(null); 
+        
+        // 2. SET LOADING
+        setIsRecommending(true);
+
+        try {
+            const kondisiMedis = medicalRecords.map(r => r.diagnosis).join(', ');
 
             const response = await fetch('http://localhost:5000/herbal/recommendation-input?q=' + keluhan + '&medical=' + kondisiMedis);
             const data = await response.json();
@@ -129,17 +178,31 @@ export default function PatientDashboard() {
                 <p><strong>Wallet Anda:</strong> <code>{address}</code></p>
             </div>
 
-            {/* SEKSI 1: REQUEST MASUK */}
+         {/* SEKSI 1: REQUEST MASUK */}
             <h3>🔔 Permintaan Akses</h3>
             {pendingDocs.length === 0 ? (
                 <p style={{ color: '#888', fontStyle: 'italic' }}>Tidak ada permintaan tertunda.</p>
             ) : (
-                pendingDocs.map(doc => (
-                    <div key={doc} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #ffeeba', padding: '15px', borderRadius: '8px', background: '#fff9e6', marginBottom: '10px' }}>
-                        <code>{doc}</code>
-                        <button onClick={() => handleGrant(doc)} disabled={isProcessing} style={{ background: '#ffc107', color: 'black', border: 'none', padding: '10px 20px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>
-                            {isProcessing ? "Proses..." : "Setujui Akses"}
-                        </button>
+                pendingDocs.map((doc, index) => (
+                    <div key={index} style={{ display: 'flex', flexDirection: 'column', border: '1px solid #ffeeba', padding: '15px', borderRadius: '8px', background: '#fff9e6', marginBottom: '10px' }}>
+                        <p style={{margin: 0, fontWeight: 'bold'}}>{doc.name}</p>
+                        <code style={{ marginBottom: '10px', display: 'block' }}>{doc.address}</code>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button 
+                                onClick={() => handleGrant(doc.address)} // Kirim alamatnya saja
+                                disabled={isProcessing} 
+                                style={{ flex: 1, background: '#28a745', color: 'white', border: 'none', padding: '10px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
+                            >
+                                {isProcessing ? "..." : "Setujui"}
+                            </button>
+                            <button 
+                                onClick={() => handleReject(doc.address)} // Kirim alamatnya saja
+                                disabled={isProcessing} 
+                                style={{ flex: 1, background: '#dc3545', color: 'white', border: 'none', padding: '10px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
+                            >
+                                {isProcessing ? "..." : "Tolak"}
+                            </button>
+                        </div>
                     </div>
                 ))
             )}
@@ -166,7 +229,10 @@ export default function PatientDashboard() {
                                         {new Date(rec.timestamp * 1000).toLocaleString()}
                                     </td>
                                     <td style={{ padding: '12px', borderBottom: '1px solid #eee' }}>
-                                        <code>{rec.cid}</code>
+                                        <div style={{ fontWeight: 'bold', color: '#28a745' }}>
+                                            {rec.diagnosis} {/* TEKS PENYAKIT MUNCUL DI SINI */}
+                                        </div>
+                                        <code style={{ fontSize: '0.7rem', color: '#999' }}>{rec.cid}</code>
                                     </td>
                                 </tr>
                             ))}
@@ -178,14 +244,33 @@ export default function PatientDashboard() {
             <div style={{ height: '40px' }}></div>
 
             {/* SEKSI 3: DOKTER AKTIF */}
-            <h3 style={{ color: '#28a745' }}>✅ Dokter Berizin</h3>
-            {approvedDocs.map(doc => (
-                <div key={doc} style={{ padding: '15px', borderRadius: '8px', background: '#eaffea', border: '1px solid #c3e6cb' }}>
-                    <code>{doc}</code>
-                    <span style={{ marginLeft: '10px', color: '#155724', fontWeight: 'bold', fontSize: '0.8rem' }}>● AKTIF</span>
-                </div>
-            ))}
-
+            <h3 style={{ color: '#28a745', marginTop: '30px' }}>✅ Dokter Berizin</h3>
+            {approvedDocs.length === 0 ? (
+                <p style={{ color: '#888' }}>Belum ada dokter yang diberi izin.</p>
+            ) : (
+                approvedDocs.map((doc, index) => (
+                    // Gunakan 'index' sebagai key agar lebih aman
+                    <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', borderRadius: '8px', background: '#eaffea', border: '1px solid #c3e6cb', marginBottom: '10px' }}>
+                        <div>
+                            {/* Tampilkan NAMA dokternya */}
+                            <p style={{ margin: 0, fontWeight: 'bold', color: '#155724' }}>{doc.name || "Dokter Terverifikasi"}</p>
+                            
+                            {/* Tampilkan ADDRESS dokternya (Gunakan doc.address, bukan doc saja) */}
+                            <code style={{ fontSize: '0.9rem' }}>{doc.address}</code>
+                            
+                            <span style={{ marginLeft: '10px', color: '#155724', fontWeight: 'bold', fontSize: '0.7rem', verticalAlign: 'middle' }}>● AKTIF</span>
+                        </div>
+                        
+                        <button 
+                            onClick={() => handleRevoke(doc.address)} // Gunakan doc.address di sini juga
+                            disabled={isProcessing}
+                            style={{ background: '#6c757d', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '5px', cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                            {isProcessing ? "..." : "Cabut Izin"}
+                        </button>
+                    </div>
+                ))
+            )}
             {/* SEKSI BARU: AI HERBAL RECOMMENDATION */}
             <div style={{ marginTop: '40px', padding: '20px', background: '#f0fff4', borderRadius: '15px', border: '2px solid #28a745' }}>
                 <h3>🤖 AI Rekomendasi Herbal (RAG + Rules)</h3>
@@ -196,7 +281,7 @@ export default function PatientDashboard() {
                     placeholder="Apa yang Anda rasakan? (Contoh: Susah tidur)" 
                     value={keluhan}
                     onChange={(e) => setKeluhan(e.target.value)}
-                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ccc', marginBottom: '10px' }}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ccc', marginBottom: '10px', boxSizing: 'border-box' }}
                 />
                 
                 <button 

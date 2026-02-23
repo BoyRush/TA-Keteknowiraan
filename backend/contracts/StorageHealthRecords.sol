@@ -15,12 +15,13 @@ contract StorageHealthRecords {
     }
 
     // =====================
-    // STRUCT
+    // 1. STRUCT (Struktur Data)
     // =====================
 
     struct MedicalRecord {
         string cid;
         uint256 timestamp;
+        address createdBy; 
     }
 
     struct HerbalRecord {
@@ -28,73 +29,92 @@ contract StorageHealthRecords {
         uint256 timestamp;
     }
 
-    // =====================
-    // STORAGE
-    // =====================
-
-    // pasien => dokter => status_request
-    mapping(address => mapping(address => bool)) public pendingRequests;
-
-    // pasien => data medis
-    mapping(address => MedicalRecord[]) private medicalRecords;
-
-    // dokter herbal => data herbal
-    mapping(address => HerbalRecord[]) private herbalRecords;
-
-    // pasien => dokter => izin
-    mapping(address => mapping(address => bool)) private accessPermission;
-    function checkAccess(address _patient, address _doctor) public view returns (bool) {
-        return accessPermission[_patient][_doctor];
+    struct DoctorProfile {
+        string name;
+        string specialty;
+        bool isApproved;
+        bool isRegistered;
     }
 
-    // admin => dokter terverifikasi
+    // =====================
+    // 2. STORAGE (Penyimpanan State)
+    // =====================
+
+    mapping(address => string) public patientNames; // Nama untuk Pasien
+    mapping(address => DoctorProfile) public doctors; // Profil lengkap Dokter
+    
+    mapping(address => mapping(address => bool)) public pendingRequests;
+    mapping(address => MedicalRecord[]) private medicalRecords;
+    mapping(address => HerbalRecord[]) private herbalRecords;
+    mapping(address => mapping(address => bool)) private accessPermission;
     mapping(address => bool) public verifiedDoctor;
 
     // =====================
-    // MEDICAL (PASIENT)
+    // 3. IDENTITY & REGISTRATION
     // =====================
 
-    function storeMedicalRecord(address _patient, string memory _cid) public {
-        // Validasi: Pengirim (msg.sender) harus si pasien itu sendiri 
-        // ATAU dokter yang sudah diberi izin (accessPermission)
-        require(
-            msg.sender == _patient || accessPermission[_patient][msg.sender] == true, 
-            "Access denied: No permission to store record"
-        );
-
-        medicalRecords[_patient].push(
-            MedicalRecord(_cid, block.timestamp)
-        );
+    // Dokter mendaftar (Status awal: Belum disetujui admin)
+    function registerDoctor(string memory _name, string memory _specialty) public {
+        require(!doctors[msg.sender].isRegistered, "Sudah terdaftar");
+        doctors[msg.sender] = DoctorProfile(_name, _specialty, false, true);
     }
 
-    function rejectAccess(address _doctor) public {
-        // Pastikan memang ada request sebelumnya
-        require(pendingRequests[msg.sender][_doctor], "No pending request from this doctor");
-        
-        // Hapus dari daftar pending
-        pendingRequests[msg.sender][_doctor] = false;
-        
-        // Pastikan permission tetap false (sebagai pengaman tambahan)
-        accessPermission[msg.sender][_doctor] = false;
+    // Pasien mendaftar nama saja
+    function registerPatient(string memory _name) public {
+        patientNames[msg.sender] = _name;
+    }
+
+    // Admin menyetujui Dokter (Supaya bisa input data herbal/medis)
+    function approveDoctor(address _doctor) public onlyAdmin {
+        require(doctors[_doctor].isRegistered, "Dokter belum mendaftar");
+        doctors[_doctor].isApproved = true;
+        verifiedDoctor[_doctor] = true; 
+    }
+
+    // =====================
+    // 4. MEDICAL ACCESS (REJECT & REVOKE)
+    // =====================
+
+    function checkAccess(address _patient, address _doctor) public view returns (bool) {
+        return accessPermission[_patient][_doctor];
     }
 
     function requestAccess(address _patient) public {
         pendingRequests[_patient][msg.sender] = true;
     }
 
+    // Pasien menolak permintaan yang masuk
+    function rejectAccess(address _doctor) public {
+        require(pendingRequests[msg.sender][_doctor], "No pending request");
+        pendingRequests[msg.sender][_doctor] = false;
+    }
+
+    // Pasien memberikan izin (Otomatis hapus dari pending)
     function grantAccess(address _doctor) public {
+        pendingRequests[msg.sender][_doctor] = false;
         accessPermission[msg.sender][_doctor] = true;
     }
 
+    // Pasien mencabut izin yang sudah ada
     function revokeAccess(address _doctor) public {
         accessPermission[msg.sender][_doctor] = false;
     }
 
-    function getMedicalRecords(address _patient)
-        public
-        view
-        returns (MedicalRecord[] memory)
-    {
+    // =====================
+    // 5. DATA MANAGEMENT
+    // =====================
+
+    function storeMedicalRecord(address _patient, string memory _cid) public {
+        require(
+            msg.sender == _patient || accessPermission[_patient][msg.sender] == true, 
+            "Access denied"
+        );
+        medicalRecords[_patient].push(
+            MedicalRecord(_cid, block.timestamp, msg.sender)
+        );
+    }
+
+    function getMedicalRecords(address _patient) public view returns (MedicalRecord[] memory) {
         require(
             msg.sender == _patient || accessPermission[_patient][msg.sender],
             "Access denied"
@@ -102,34 +122,12 @@ contract StorageHealthRecords {
         return medicalRecords[_patient];
     }
 
-    // =====================
-    // HERBAL (DOKTER HERBAL)
-    // =====================
-
     function storeHerbalData(string memory _cid) public {
-        require(
-            verifiedDoctor[msg.sender],
-            "Doctor not verified"
-        );
-
-        herbalRecords[msg.sender].push(
-            HerbalRecord(_cid, block.timestamp)
-        );
+        require(verifiedDoctor[msg.sender] && doctors[msg.sender].isApproved, "Doctor not approved");
+        herbalRecords[msg.sender].push(HerbalRecord(_cid, block.timestamp));
     }
 
-    function getHerbalRecords(address _doctor)
-        public
-        view
-        returns (HerbalRecord[] memory)
-    {
+    function getHerbalRecords(address _doctor) public view returns (HerbalRecord[] memory) {
         return herbalRecords[_doctor];
-    }
-
-    // =====================
-    // ADMIN
-    // =====================
-
-    function verifyDoctor(address _doctor) public onlyAdmin {
-        verifiedDoctor[_doctor] = true;
     }
 }

@@ -2,36 +2,47 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../context/AuthContext';
 
-export default function LoginPage() {
-    // TAMBAHKAN 'address' di sini agar tidak error 'not defined'
-    const { address, role, isConnected, loading } = useAuth();
-    const router = useRouter();
+export default function HomePage() {
+  const { address, role, isConnected, loading, connectWallet } = useAuth();
+  const router = useRouter();
 
-    useEffect(() => {
-        if (!loading && isConnected && role) {
-            if (role === 'patient') router.push('/patient/dashboard');
-            if (role === 'doctor') router.push('/doctor/dashboard');
-            if (role === 'doctor') router.push('/herbs/dashboard');
-        }
-    }, [role, loading, isConnected, router]);
+  useEffect(() => {
+    // Tunggu sampai loading selesai dan wallet sudah terhubung
+    if (!loading && isConnected) {
+      if (role === 'none') {
+        // 1. Jika belum terdaftar, LANGSUNG lempar ke halaman registrasi
+        console.log("User belum terdaftar, mengarahkan ke halaman registrasi...");
+        router.push('/register');
+      } else if (role === 'patient') {
+        router.push('/patient/dashboard');
+      } else if (role === 'doctor' || role === 'herbal_doctor') {
+        router.push('/doctor/dashboard');
+      } else if (role === 'admin') {
+        router.push('/admin/dashboard');
+      }
+    }
+  }, [role, isConnected, loading, router]);
 
-    return (
-        <div style={{ textAlign: 'center', marginTop: '100px' }}>
-            <h1>Sistem Rekam Medis Herbal Blockchain</h1>
-            {loading ? (
-                <p>Sedang memverifikasi alamat wallet Anda...</p>
-            ) : (
-                <>
-                    {isConnected && !role && (
-                        <p style={{ color: 'red' }}>
-                            Alamat {address} belum terdaftar sebagai Pasien/Dokter.
-                        </p>
-                    )}
-                    <div style={{ display: 'flex', justifyContent: 'center' }}>
-                        <w3m-button />
-                    </div>
-                </>
-            )}
+  return (
+    <div style={{ textAlign: 'center', padding: '100px', fontFamily: 'sans-serif' }}>
+      <h1>🌿 Sistem Rekam Medis Herbal Blockchain</h1>
+      
+      {!isConnected ? (
+        <div style={{ marginTop: '20px' }}>
+          <p>Selamat Datang. Silakan hubungkan dompet MetaMask Anda.</p>
+          <button 
+            onClick={connectWallet}
+            style={{ padding: '15px 30px', fontSize: '1.1rem', background: '#0070f3', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+          >
+            Hubungkan Wallet
+          </button>
         </div>
-    );
+      ) : (
+        <div>
+          <p>⌛ Memverifikasi identitas Anda di Blockchain...</p>
+          {/* Jika role === 'none', dalam sekejap user akan pindah halaman karena useEffect di atas */}
+        </div>
+      )}
+    </div>
+  );
 }
