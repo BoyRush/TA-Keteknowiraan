@@ -138,6 +138,7 @@ export default function HerbalDoctorDashboard() {
             </form>
 
             {/* TABEL DATA */}
+
             <h3 style={{ color: '#1b5e20', borderBottom: '2px solid #2e7d32', paddingBottom: '10px' }}>📋 Database Herbal Terverifikasi</h3>
             <div style={{ overflowX: 'auto', background: 'white', borderRadius: '10px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -145,6 +146,8 @@ export default function HerbalDoctorDashboard() {
                         <tr style={{ background: '#2e7d32', color: 'white' }}>
                             <th style={tdStyle}>Nama Tanaman</th>
                             <th style={tdStyle}>Indikasi</th>
+                            {/* TAMBAHKAN KOLOM INI */}
+                            <th style={tdStyle}>Kontraindikasi</th> 
                             <th style={tdStyle}>Aksi</th>
                         </tr>
                     </thead>
@@ -153,6 +156,8 @@ export default function HerbalDoctorDashboard() {
                             <tr key={herb.id} style={{ borderBottom: '1px solid #eee' }}>
                                 <td style={tdStyle}><b>{herb.nama}</b></td>
                                 <td style={tdStyle}>{herb.indikasi}</td>
+                                {/* TAMPILKAN DATA KONTRAINDIKASI DI SINI */}
+                                <td style={tdStyle}> {herb.kontraindikasi || '-'} </td>
                                 <td style={tdStyle}>
                                     <button onClick={() => handleEdit(herb)} style={editBtnStyle}>Edit</button>
                                     <button onClick={() => handleDelete(herb.id)} style={deleteBtnStyle}>Hapus</button>
@@ -160,7 +165,7 @@ export default function HerbalDoctorDashboard() {
                             </tr>
                         )) : (
                             <tr>
-                                <td colSpan="3" style={{ textAlign: 'center', padding: '30px', color: '#888' }}>
+                                <td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: '#888' }}>
                                     {isInitialLoading ? "Sedang memuat data..." : "Belum ada data herbal yang terdaftar."}
                                 </td>
                             </tr>

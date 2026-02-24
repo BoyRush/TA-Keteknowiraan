@@ -8,7 +8,7 @@ export default function PatientDashboard() {
     const { address, role, loading } = useAuth();
     const [pendingDocs, setPendingDocs] = useState([]);
     const [approvedDocs, setApprovedDocs] = useState([]); 
-    const [medicalRecords, setMedicalRecords] = useState([]); // STATE BARU UNTUK DATA MEDIS
+    const [medicalRecords, setMedicalRecords] = useState([]); 
     const [isProcessing, setIsProcessing] = useState(false);
     const router = useRouter();
     const [keluhan, setKeluhan] = useState('');
@@ -23,17 +23,14 @@ export default function PatientDashboard() {
 
     const fetchFromIPFS = async (cid) => {
         try {
-            // Kita ambil data dari Gateway IPFS lokal kamu
             const response = await fetch(`http://127.0.0.1:8080/ipfs/${cid}`);
             const data = await response.json();
-            // Asumsi data di IPFS bentuknya: { diagnosis: "Vertigo", patient_address: "..." }
             return data.diagnosis || data; 
         } catch (error) {
             console.error("Gagal ambil data IPFS:", error);
             return "Gagal memuat teks diagnosa";
         }
     };
-    // FUNGSI UTAMA: Load semua data dari Blockchain
     const loadRequests = async () => {
         if (!window.ethereum || !address) return;
 

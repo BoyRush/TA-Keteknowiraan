@@ -10,7 +10,6 @@ export default function HomePage() {
     // Tunggu sampai loading selesai dan wallet sudah terhubung
     if (!loading && isConnected) {
       if (role === 'none') {
-        // 1. Jika belum terdaftar, LANGSUNG lempar ke halaman registrasi
         console.log("User belum terdaftar, mengarahkan ke halaman registrasi...");
         router.push('/register');
       } else if (role === 'patient') {
@@ -40,7 +39,7 @@ export default function HomePage() {
       ) : (
         <div>
           <p>⌛ Memverifikasi identitas Anda di Blockchain...</p>
-          {/* Jika role === 'none', dalam sekejap user akan pindah halaman karena useEffect di atas */}
+          {}
         </div>
       )}
     </div>

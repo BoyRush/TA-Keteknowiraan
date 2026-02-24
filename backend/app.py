@@ -141,12 +141,10 @@ def get_all_herbs():
         base_dir = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(base_dir, "chroma_db")
         client = chromadb.PersistentClient(path=db_path)
-        
-        # CETAK SEMUA KOLEKSI YANG ADA DI DATABASE (Cek Terminal Flask!)
+
         existing_collections = client.list_collections()
         print(f"🔍 KOLEKSI YANG DITEMUKAN DI DB: {[c.name for c in existing_collections]}")
 
-        # Coba ambil koleksi pertama yang tersedia, kalau tidak ada baru pakai 'herbal_db'
         target_name = "herbal_db"
         if existing_collections:
             target_name = existing_collections[0].name
@@ -184,13 +182,11 @@ def delete_herb(id):
         db_path = os.path.join(base_dir, "chroma_db")
         client = chromadb.PersistentClient(path=db_path)
         
-        # Gunakan nama koleksi yang kita pakai tadi
         collection = client.get_or_create_collection(name="herbal_collection")
 
         # 2. Hapus data berdasarkan ID di ChromaDB
         collection.delete(ids=[id])
         
-        # LOG BUKTI SIDANG
         print("\n" + "!"*40)
         print(f"🗑️  DATA DIHAPUS: ID {id}")
         print(f"Status: Berhasil dihapus dari ChromaDB (herbal_collection)")
@@ -297,14 +293,11 @@ def recommendation_input():
     # ✨ 2.5 VALIDATION LAYER: Filter cerdas agar tidak salah alamat
     strictly_relevant_herbs = []
     
-    # Daftar kata umum yang sering muncul tapi tidak spesifik ke penyakit tertentu
     stop_words = ["sakit", "nyeri", "obat", "gejala", "herbal", "alami", "manjur"]
     
     # Hanya ambil kata kunci yang unik (misal: "kaki", "tenggorokan", "lambung")
     query_words = [w for w in query.split() if w not in stop_words and len(w) > 2]
 
-    # JIKA setelah difilter query_words jadi kosong (misal user cuma input "sakit"), 
-    # kembalikan ke query asli agar tetap ada hasil
     if not query_words:
         query_words = query.split()
 
@@ -312,14 +305,13 @@ def recommendation_input():
         indikasi = herb.get("indikasi", "").lower()
         deskripsi = herb.get("deskripsi", "").lower()
         
-        # Cek apakah ada kata kunci (seperti 'kaki') di dalam indikasi herbal
+      
         is_relevant = any(word in indikasi or word in deskripsi for word in query_words)
 
         if is_relevant:
             strictly_relevant_herbs.append(herb)
   
     # 📦 3. BANGUN INPUT LLM
-    # Gunakan 'strictly_relevant_herbs' bukan 'safe_herbs' lagi
     llm_input = build_llm_input(
         query,
         medical_conditions,
@@ -327,11 +319,10 @@ def recommendation_input():
     )
 
     # 🤖 4. LLM (HANYA reasoning & formatting)
-    # Jika strictly_relevant_herbs kosong, AI akan menerima list kosong 
-    # dan (seharusnya) memberikan jawaban bahwa tidak ada herbal yang cocok.
     llm_output = generate_herbal_recommendation(llm_input)
 
     return jsonify(llm_output)
+
 # =========================
 # IPFS  
 # =========================
@@ -351,9 +342,7 @@ def get_medical_content():
         # Flask memanggil IPFS lokal (Port 5001 API)
         # Jalur ini tidak akan kena blokir CORS oleh browser
         response = requests.post(f'http://127.0.0.1:5001/api/v0/cat?arg={cid}', timeout=5)
-        
-        # Karena saat upload kamu pakai JSON (medical_metadata), 
-        # maka kita kirim balik dalam bentuk JSON juga ke React.
+
         return response.text, 200, {'Content-Type': 'application/json'}
     except Exception as e:
         return jsonify({"diagnosis": "Gagal mengambil data"}), 500
@@ -568,7 +557,6 @@ def store_herbal_api():
         print(f"✅ IPFS Success: {ipfs_cid}")
 
         # 2. ChromaDB (PERBAIKAN DI SINI)
-        # Tambahkan parameter kontraindikasi agar tidak error lagi
         add_herbal(
             name=nama, 
             indikasi=indikasi, 
@@ -591,8 +579,6 @@ def store_herbal_api():
         
         signed = web3.eth.account.sign_transaction(tx, pk)
 
-        # --- SOLUSI ERROR rawTransaction ---
-        # Kita cek apakah objek 'signed' punya rawTransaction atau raw_transaction
         raw_data = signed.raw_transaction if hasattr(signed, 'raw_transaction') else signed.rawTransaction
         
         tx_hash = web3.eth.send_raw_transaction(raw_data)

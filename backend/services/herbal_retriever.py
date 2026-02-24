@@ -10,11 +10,7 @@ def retrieve_relevant_herbs(query, k=5):
             nama = result["metadatas"][0][i].get("name")
             indikasi = result["metadatas"][0][i].get("indikasi", "").lower()
             
-            # --- STRATEGI BARU ---
-            # Kita tidak pakai keyword matching lagi supaya tidak kaku.
-            # Kita loloskan semua yang jarak vektornya masuk akal (di bawah 0.65).
-            # Angka 0.65 dipilih agar Jahe (0.59) bisa masuk, tapi yang ngawur terbuang.
-            
+
             if distance < 0.65: 
                 herbs.append({
                     "id": result["ids"][0][i],
