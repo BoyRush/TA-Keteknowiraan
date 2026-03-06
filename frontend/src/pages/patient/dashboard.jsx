@@ -14,6 +14,9 @@ export default function PatientDashboard() {
     const [keluhan, setKeluhan] = useState('');
     const [rekomendasi, setRekomendasi] = useState(null);
     const [isRecommending, setIsRecommending] = useState(false);
+    const [suggestions, setSuggestions] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [showSuggestions, setShowSuggestions] = useState(false);
 
     useEffect(() => {
         if (!loading && role !== 'patient') {
@@ -31,52 +34,99 @@ export default function PatientDashboard() {
             return "Gagal memuat teks diagnosa";
         }
     };
-    const loadRequests = async () => {
-        if (!window.ethereum || !address) return;
 
-        try {
-            const provider = new ethers.providers.Web3Provider(window.ethereum);
-            const signer = provider.getSigner();
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-            const patientChecksum = ethers.utils.getAddress(address.toLowerCase());
+const loadRequests = async () => {
+    if (!window.ethereum || !address || role !== 'patient') return;
 
-            // 1. Ambil CID dari Blockchain
-            const records = await contract.getMedicalRecords(patientChecksum); 
+    try {
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const signer = provider.getSigner();
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
+        const patientChecksum = ethers.utils.getAddress(address.toLowerCase());
 
-            // 2. "Terjemahkan" CID menjadi Teks secara otomatis
-            const formattedRecords = await Promise.all(records.map(async (r) => {
+        console.log("🔄 --- SINKRONISASI DASHBOARD PASIEN ---");
+
+        // 1. Ambil SEMUA data dari Blockchain (Sekarang mengembalikan data mentah tanpa filter)
+        const records = await contract.getMedicalRecords(patientChecksum); 
+        
+        // 2. Proses dan Filter di sisi Frontend
+        const formattedRecords = await Promise.all(records.map(async (r, index) => {
+            // --- 🛡️ FILTER STATUS AKTIF ---
+            // Karena Smart Contract sekarang mengirim semua, kita filter di sini:
+            const isActuallyActive = r.isActive !== undefined ? r.isActive : r[3];
+            
+            if (isActuallyActive === false) {
+                console.log(`Index ${index} adalah data non-aktif, dilewati.`);
+                return null; 
+            }
+
+            try {
+                // Ambil diagnosa dari Flask
+                const res = await fetch(`http://localhost:5000/medical/get-content?cid=${r.cid}`);
+                if (!res.ok) return null; 
+
+                const textData = await res.text();
+                let diagnosisText;
                 try {
-                    // Minta bantuan Flask untuk ambil isi IPFS
-                    const res = await fetch(`http://localhost:5000/medical/get-content?cid=${r.cid}`);
-                    const textData = await res.text();
-                    
-                    // Jika data IPFS kamu berbentuk JSON, kita parse. Jika teks biasa, langsung pakai.
-                    let diagnosisText;
-                    try {
-                        const json = JSON.parse(textData);
-                        diagnosisText = json.diagnosis || textData;
-                    } catch {
-                        diagnosisText = textData;
-                    }
-
-                    return {
-                        cid: r.cid,
-                        timestamp: r.timestamp.toNumber(),
-                        doctor: r.createdBy,
-                        diagnosis: diagnosisText // Simpan teks aslinya di sini
-                    };
-                } catch (err) {
-                    return { cid: r.cid, timestamp: r.timestamp.toNumber(), doctor: r.createdBy, diagnosis: "Gagal memuat teks" };
+                    const json = JSON.parse(textData);
+                    diagnosisText = json.diagnosis || textData;
+                } catch {
+                    diagnosisText = textData;
                 }
-            }));
 
-            setMedicalRecords(formattedRecords);
-            console.log("✅ Data Medis & Diagnosa Berhasil Dimuat");
+                return {
+                    cid: r.cid,
+                    timestamp: r.timestamp.toNumber ? r.timestamp.toNumber() : r.timestamp,
+                    diagnosis: diagnosisText,
+                    blockchainIndex: index // Index ini sekarang tetap konsisten!
+                };
+            } catch (err) {
+                return null; 
+            }
+        }));
 
-        } catch (error) {
-            console.error("Gagal load data:", error);
+        // 3. Bersihkan data null dan Urutkan
+        const finalData = formattedRecords
+            .filter(r => r !== null)
+            .sort((a, b) => b.timestamp - a.timestamp);
+
+        setMedicalRecords(finalData);
+        console.log("Tabel Pasien diperbarui dengan data aktif.");
+
+        // --- 4. AMBIL STATUS PERIZINAN DOKTER ---
+        const resDocs = await fetch("http://127.0.0.1:5000/auth/doctors");
+        const dataDocs = await resDocs.json();
+        const allDoctors = dataDocs.doctors || [];
+
+        let pending = [];
+        let approved = [];
+
+        for (let docAddr of allDoctors) {
+            try {
+                const docChecksum = ethers.utils.getAddress(docAddr);
+                const isPending = await contract.pendingRequests(patientChecksum, docChecksum);
+                const isAuth = await contract.checkAccess(patientChecksum, docChecksum);
+                const docProfile = await contract.doctors(docChecksum);
+                const docName = docProfile.name || "Dokter Medis";
+
+                if (isAuth) {
+                    approved.push({ name: docName, address: docChecksum });
+                } else if (isPending) {
+                    pending.push({ name: docName, address: docChecksum });
+                }
+            } catch (err) {
+                console.error("Gagal sinkronisasi status dokter:", docAddr, err);
+            }
         }
-    };
+
+        setPendingDocs(pending);
+        setApprovedDocs(approved);
+        console.log("Sinkronisasi Dashboard Selesai");
+
+    } catch (error) {
+        console.error("Error Fatal loadRequests:", error);
+    }
+};
 
     // 1. Fungsi Menolak (Reject)
     const handleReject = async (docAddr) => {
@@ -150,6 +200,27 @@ export default function PatientDashboard() {
             console.error("Transaksi gagal:", error);
         } finally {
             setIsProcessing(false);
+        }
+    };
+
+        const handleSearchKeluhan = async (query) => {
+        setKeluhan(query);
+        if (query.length < 3) {
+            setSuggestions([]);
+            return;
+        }
+
+        setIsSearching(true);
+        try {
+            // Panggil endpoint search ICD-10 yang kita buat di Flask
+            const response = await fetch(`http://localhost:5000/herbal/search-icd?q=${query}`);
+            const data = await response.json();
+            setSuggestions(data); // Data berisi [{label: "A00 - Kolera", value: "A00"}, ...]
+            setShowSuggestions(true);
+        } catch (error) {
+            console.error("Gagal mencari saran:", error);
+        } finally {
+            setIsSearching(false);
         }
     };
 
@@ -270,16 +341,49 @@ export default function PatientDashboard() {
             )}
             {/* SEKSI BARU: AI HERBAL RECOMMENDATION */}
             <div style={{ marginTop: '40px', padding: '20px', background: '#f0fff4', borderRadius: '15px', border: '2px solid #28a745' }}>
-                <h3>🤖 AI Rekomendasi Herbal (RAG + Rules)</h3>
-                <p style={{ fontSize: '0.9rem' }}>Sistem akan menganalisis keluhan Anda berdasarkan riwayat penyakit di Blockchain.</p>
+                <h3>AI Rekomendasi Herbal (RAG + Rules)</h3>
+                <p style={{ fontSize: '0.9rem' }}>Pilih keluhan Anda agar sistem dapat menganalisis berdasarkan riwayat penyakit.</p>
                 
-                <input 
-                    type="text" 
-                    placeholder="Apa yang Anda rasakan? (Contoh: Susah tidur)" 
-                    value={keluhan}
-                    onChange={(e) => setKeluhan(e.target.value)}
-                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ccc', marginBottom: '10px', boxSizing: 'border-box' }}
-                />
+                {/* CONTAINER INPUT & SUGGESTIONS */}
+                <div style={{ position: 'relative', marginBottom: '10px' }}>
+                    <input 
+                        type="text" 
+                        placeholder="Ketik keluhan Anda (misal: Gula, Darah, Tidur...)" 
+                        value={keluhan}
+                        onChange={(e) => handleSearchKeluhan(e.target.value)}
+                        onFocus={() => keluhan.length >= 3 && setShowSuggestions(true)}
+                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box' }}
+                    />
+                    
+                    {/* DROPDOWN SUGGESTIONS DARI CHROMADB */}
+                    {showSuggestions && suggestions.length > 0 && (
+                        <div style={{ 
+                            position: 'absolute', top: '100%', left: 0, right: 0, 
+                            background: 'white', border: '1px solid #ddd', borderRadius: '8px',
+                            boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: 100, maxHeight: '200px', overflowY: 'auto' 
+                        }}>
+                            {suggestions.map((item, idx) => (
+                                <div 
+                                    key={idx}
+                                    onClick={() => {
+                                        setKeluhan(item.label); // Set teks yang tampil
+                                        setShowSuggestions(false); // Tutup dropdown
+                                    }}
+                                    style={{ 
+                                        padding: '10px 15px', cursor: 'pointer', borderBottom: '1px solid #eee',
+                                        fontSize: '0.9rem', hover: { background: '#f8f9fa' }
+                                    }}
+                                    onMouseEnter={(e) => e.target.style.background = '#f0f0f0'}
+                                    onMouseLeave={(e) => e.target.style.background = 'white'}
+                                >
+                                    {item.label}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    
+                    {isSearching && <small style={{ color: '#888' }}>Mencari saran medis...</small>}
+                </div>
                 
                 <button 
                     onClick={handleGetAIRecommendation}

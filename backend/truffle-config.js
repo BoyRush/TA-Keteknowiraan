@@ -17,6 +17,5 @@ module.exports = {
       }
     },
   },
-  // Lokasi penyimpanan hasil masak (ABI) agar tidak bentrok dengan Hardhat
   contracts_build_directory: "./build/contracts",
 };

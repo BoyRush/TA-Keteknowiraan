@@ -1,6 +1,96 @@
 import { useAuth } from '../../context/AuthContext';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
+
+// --- KOMPONEN REUSABLE: ICD-10 MULTI-SELECT SEARCH ---
+function IcdMultiSearch({ label, selectedValues, onChange, placeholder }) {
+    const [suggestions, setSuggestions] = useState([]);
+    const [query, setQuery] = useState('');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [isSearching, setIsSearching] = useState(false);
+    const wrapperRef = useRef(null);
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+                setShowSuggestions(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handleSearch = async (val) => {
+        setQuery(val);
+        if (val.length < 3) {
+            setSuggestions([]);
+            return;
+        }
+        setIsSearching(true);
+        try {
+            const res = await fetch(`http://localhost:5000/herbal/search-icd?q=${val}`);
+            const data = await res.json();
+            setSuggestions(data);
+            setShowSuggestions(true);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const addValue = (itemLabel) => {
+        // Simpan sebagai string yang dipisahkan koma
+        const currentArray = selectedValues ? selectedValues.split(', ').filter(v => v) : [];
+        if (!currentArray.includes(itemLabel)) {
+            const newValues = [...currentArray, itemLabel].join(', ');
+            onChange(newValues);
+        }
+        setQuery('');
+        setShowSuggestions(false);
+    };
+
+    const removeValue = (itemLabel) => {
+        const newValues = selectedValues
+            .split(', ')
+            .filter(v => v !== itemLabel)
+            .join(', ');
+        onChange(newValues);
+    };
+
+    return (
+        <div ref={wrapperRef} style={{ marginBottom: '20px', position: 'relative' }}>
+            <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>{label}</label>
+            
+            {/* Tampilan Tags/Badges untuk item yang sudah dipilih */}
+            <div style={tagContainerStyle}>
+                {selectedValues && selectedValues.split(', ').map((val, idx) => val && (
+                    <span key={idx} style={tagStyle}>
+                        {val} 
+                        <button type="button" onClick={() => removeValue(val)} style={removeTagBtn}>×</button>
+                    </span>
+                ))}
+                <input 
+                    style={invisibleInputStyle}
+                    value={query}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    placeholder={selectedValues ? "" : placeholder}
+                />
+            </div>
+
+            {showSuggestions && suggestions.length > 0 && (
+                <div style={dropdownStyle}>
+                    {suggestions.map((item, idx) => (
+                        <div key={idx} onClick={() => addValue(item.label)} style={itemStyle}>
+                            {item.label}
+                        </div>
+                    ))}
+                </div>
+            )}
+            {isSearching && <small>🔍 Mencari ICD-10...</small>}
+        </div>
+    );
+}
 
 export default function HerbalDoctorDashboard() {
     const { address, role, loading } = useAuth();
@@ -10,45 +100,31 @@ export default function HerbalDoctorDashboard() {
     const [isInitialLoading, setIsInitialLoading] = useState(true);
     const router = useRouter();
 
-    // 1. Fungsi Fetch Data - Dibuat stabil dengan useCallback
     const fetchHerbalData = useCallback(async () => {
         try {
             const res = await fetch('http://localhost:5000/herbal/all');
-            if (!res.ok) throw new Error("Server error");
             const data = await res.json();
-            
-            console.log("📥 Data masuk ke Dashboard:", data);
-            // Pastikan data yang masuk adalah Array
             setHerbalList(Array.isArray(data) ? data : []);
         } catch (err) {
-            console.error("❌ Gagal mengambil data tabel:", err);
             setHerbalList([]);
         } finally {
             setIsInitialLoading(false);
         }
     }, []);
 
-    // 2. Proteksi Akses & Inisialisasi Data
     useEffect(() => {
         if (!loading) {
-            if (role === 'herbal_doctor') {
-                fetchHerbalData();
-            } else {
-                router.push('/');
-            }
+            if (role === 'herbal_doctor') fetchHerbalData();
+            else router.push('/');
         }
-    }, [role, loading, fetchHerbalData]); // router sengaja tidak dimasukkan untuk cegah loop
+    }, [role, loading, fetchHerbalData]);
 
-    // 3. Handler Simpan (Create & Update)
     const handleStoreHerbal = async (e) => {
         e.preventDefault();
         setIsSaving(true);
         try {
             const isUpdate = !!form.id;
-            const url = isUpdate 
-                ? `http://localhost:5000/herbal/update/${form.id}` 
-                : 'http://localhost:5000/herbal/store';
-            
+            const url = isUpdate ? `http://localhost:5000/herbal/update/${form.id}` : 'http://localhost:5000/herbal/store';
             const response = await fetch(url, {
                 method: isUpdate ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -56,31 +132,21 @@ export default function HerbalDoctorDashboard() {
             });
 
             if (response.ok) {
-                alert(isUpdate ? "✅ Data diperbarui!" : "✅ Data tersimpan ke Blockchain & AI!");
+                alert("Data Berhasil Disinkronkan!");
                 setForm({ id: null, name: '', indikasi: '', kontraindikasi: '', deskripsi: '' });
-                fetchHerbalData(); // Refresh tabel
-            } else {
-                alert("❌ Gagal menyimpan data.");
+                fetchHerbalData();
             }
         } catch (error) {
-            alert("❌ Terjadi kesalahan koneksi server.");
+            alert("Gagal simpan.");
         } finally {
             setIsSaving(false);
         }
     };
 
-    // 4. Handler Hapus
     const handleDelete = async (id) => {
-        if (!window.confirm("Hapus permanen data ini dari Blockchain & AI?")) return;
-        try {
-            const res = await fetch(`http://localhost:5000/herbal/delete/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                alert("🗑️ Data berhasil dihapus!");
-                fetchHerbalData();
-            }
-        } catch (err) {
-            alert("❌ Gagal menghapus.");
-        }
+        if (!window.confirm("Hapus data?")) return;
+        await fetch(`http://localhost:5000/herbal/delete/${id}`, { method: 'DELETE' });
+        fetchHerbalData();
     };
 
     const handleEdit = (herb) => {
@@ -94,82 +160,73 @@ export default function HerbalDoctorDashboard() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    if (loading || isInitialLoading) return (
-        <div style={{ textAlign: 'center', marginTop: '100px', fontFamily: 'sans-serif' }}>
-            <p>⌛ Memverifikasi Otoritas Dokter Herbal...</p>
-        </div>
-    );
+    if (loading || isInitialLoading) return <p style={{textAlign:'center', marginTop:'100px'}}>Memverifikasi...</p>;
 
     return (
         <div style={{ padding: '40px', maxWidth: '1100px', margin: '0 auto', fontFamily: 'sans-serif' }}>
-            <h1 style={{ color: '#1b5e20', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                🌿 <span>Dashboard Pengetahuan Herbal</span>
-            </h1>
+            <h1 style={{ color: '#1b5e20' }}>🌿 Dashboard Pengetahuan Herbal</h1>
 
-            <div style={{ background: '#e8f5e9', padding: '15px', borderRadius: '8px', marginBottom: '30px', borderLeft: '5px solid #2e7d32' }}>
-                <p style={{ margin: 0, fontSize: '14px' }}><b>Dokter:</b> {address}</p>
-                <p style={{ margin: '5px 0 0 0', fontSize: '12px', color: '#444' }}>Status: <b>Verified Blockchain Authority</b></p>
+            <div style={authBoxStyle}>
+                <p><b>Dokter:</b> {address}</p>
             </div>
 
-            {/* FORM INPUT */}
             <form onSubmit={handleStoreHerbal} style={formBoxStyle}>
-                <h3 style={{ marginTop: 0 }}>{form.id ? "✏️ Edit Pengetahuan" : "➕ Tambah Pengetahuan Baru"}</h3>
-                <div style={gridStyle}>
-                    <div>
-                        <label>Nama Tanaman</label>
-                        <input style={inputStyle} value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Contoh: Kunyit" required />
-                    </div>
-                    <div>
-                        <label>Indikasi (Kegunaan)</label>
-                        <input style={inputStyle} value={form.indikasi} onChange={e => setForm({...form, indikasi: e.target.value})} placeholder="Contoh: Perut kembung, Maag" required />
-                    </div>
-                </div>
-                <label>Kontraindikasi</label>
-                <input style={inputStyle} value={form.kontraindikasi} onChange={e => setForm({...form, kontraindikasi: e.target.value})} placeholder="Contoh: Penderita batu empedu" />
+                <h3 style={{marginTop:0}}>{form.id ? "✏️ Edit Pengetahuan" : "➕ Tambah Pengetahuan Baru"}</h3>
                 
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{marginBottom:'20px'}}>
+                    <label style={{fontWeight:'bold'}}>Nama Tanaman</label>
+                    <input style={inputStyle} value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Contoh: Sambiloto" required />
+                </div>
+
+                <div style={gridStyle}>
+                    <IcdMultiSearch 
+                        label="Indikasi (Bisa lebih dari 1)"
+                        selectedValues={form.indikasi}
+                        onChange={(val) => setForm({...form, indikasi: val})}
+                        placeholder="Cari kegunaan..."
+                    />
+                    <IcdMultiSearch 
+                        label="Kontraindikasi (Bisa lebih dari 1)"
+                        selectedValues={form.kontraindikasi}
+                        onChange={(val) => setForm({...form, kontraindikasi: val})}
+                        placeholder="Cari pantangan..."
+                    />
+                </div>
+
+                <label style={{fontWeight:'bold'}}>Deskripsi Lengkap:</label>
+                <textarea style={textareaStyle} value={form.deskripsi} onChange={e => setForm({...form, deskripsi: e.target.value})} required />
+                
+                <div style={{display:'flex', gap:'10px'}}>
                     <button type="submit" disabled={isSaving} style={btnStyle}>
-                        {isSaving ? "⌛ Memproses..." : (form.id ? "Update Data" : "Simpan Ke Jaringan")}
+                        {isSaving ? "⌛ Memproses..." : "Simpan Data"}
                     </button>
-                    {form.id && (
-                        <button type="button" onClick={() => setForm({id:null, name:'', indikasi:'', kontraindikasi:'', deskripsi:''})} style={cancelBtnStyle}>Batal</button>
-                    )}
+                    {form.id && <button onClick={() => setForm({id:null, name:'', indikasi:'', kontraindikasi:'', deskripsi:''})} style={cancelBtnStyle}>Batal</button>}
                 </div>
             </form>
 
-            {/* TABEL DATA */}
-
-            <h3 style={{ color: '#1b5e20', borderBottom: '2px solid #2e7d32', paddingBottom: '10px' }}>📋 Database Herbal Terverifikasi</h3>
-            <div style={{ overflowX: 'auto', background: 'white', borderRadius: '10px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ color: '#1b5e20', borderBottom: '2px solid #2e7d32' }}>📋 Database</h3>
+            <div style={tableWrapper}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                         <tr style={{ background: '#2e7d32', color: 'white' }}>
-                            <th style={tdStyle}>Nama Tanaman</th>
+                            <th style={tdStyle}>Nama</th>
                             <th style={tdStyle}>Indikasi</th>
-                            {/* TAMBAHKAN KOLOM INI */}
-                            <th style={tdStyle}>Kontraindikasi</th> 
+                            <th style={tdStyle}>Kontraindikasi</th>
                             <th style={tdStyle}>Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {herbalList.length > 0 ? herbalList.map((herb) => (
+                        {herbalList.map((herb) => (
                             <tr key={herb.id} style={{ borderBottom: '1px solid #eee' }}>
                                 <td style={tdStyle}><b>{herb.nama}</b></td>
-                                <td style={tdStyle}>{herb.indikasi}</td>
-                                {/* TAMPILKAN DATA KONTRAINDIKASI DI SINI */}
-                                <td style={tdStyle}> {herb.kontraindikasi || '-'} </td>
+                                <td style={tdStyle}><div style={cellScroll}>{herb.indikasi}</div></td>
+                                <td style={tdStyle}><div style={cellScroll}>{herb.kontraindikasi}</div></td>
                                 <td style={tdStyle}>
                                     <button onClick={() => handleEdit(herb)} style={editBtnStyle}>Edit</button>
                                     <button onClick={() => handleDelete(herb.id)} style={deleteBtnStyle}>Hapus</button>
                                 </td>
                             </tr>
-                        )) : (
-                            <tr>
-                                <td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: '#888' }}>
-                                    {isInitialLoading ? "Sedang memuat data..." : "Belum ada data herbal yang terdaftar."}
-                                </td>
-                            </tr>
-                        )}
+                        ))}
                     </tbody>
                 </table>
             </div>
@@ -178,11 +235,21 @@ export default function HerbalDoctorDashboard() {
 }
 
 // --- STYLES ---
-const formBoxStyle = { background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', marginBottom: '40px', border: '1px solid #e0e0e0' };
+const tagContainerStyle = { border: '1px solid #ccc', borderRadius: '6px', padding: '5px', display: 'flex', flexWrap: 'wrap', gap: '5px', background: '#fff', minHeight: '45px', alignItems: 'center' };
+const tagStyle = { background: '#e8f5e9', color: '#2e7d32', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px', border: '1px solid #c8e6c9' };
+const removeTagBtn = { background: 'none', border: 'none', color: '#2e7d32', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' };
+const invisibleInputStyle = { border: 'none', outline: 'none', flex: 1, padding: '8px', minWidth: '150px' };
+const dropdownStyle = { position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #ddd', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: '200px', overflowY: 'auto' };
+const itemStyle = { padding: '10px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid #eee' };
+const formBoxStyle = { background: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', marginBottom: '40px' };
+const authBoxStyle = { background: '#e8f5e9', padding: '15px', borderRadius: '8px', marginBottom: '20px', borderLeft: '5px solid #2e7d32' };
 const gridStyle = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' };
-const inputStyle = { width: '100%', padding: '12px', margin: '8px 0 16px 0', border: '1px solid #ccc', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' };
-const btnStyle = { flex: 2, padding: '15px', background: '#2e7d32', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' };
-const cancelBtnStyle = { flex: 1, padding: '15px', background: '#757575', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' };
-const tdStyle = { padding: '15px', textAlign: 'left', fontSize: '14px' };
-const editBtnStyle = { marginRight: '8px', padding: '8px 15px', background: '#0288d1', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' };
-const deleteBtnStyle = { padding: '8px 15px', background: '#d32f2f', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' };
+const inputStyle = { width: '100%', padding: '12px', border: '1px solid #ccc', borderRadius: '6px', boxSizing: 'border-box' };
+const textareaStyle = { width: '100%', height: '100px', padding: '10px', borderRadius: '6px', border: '1px solid #ccc', marginBottom: '15px' };
+const btnStyle = { flex: 1, padding: '15px', background: '#2e7d32', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' };
+const cancelBtnStyle = { padding: '15px', background: '#757575', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' };
+const tdStyle = { padding: '15px', textAlign: 'left', fontSize: '13px' };
+const tableWrapper = { background: 'white', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' };
+const cellScroll = { maxHeight: '60px', overflowY: 'auto', fontSize: '11px', lineHeight: '1.4' };
+const editBtnStyle = { marginRight: '5px', padding: '5px 10px', background: '#0288d1', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' };
+const deleteBtnStyle = { padding: '5px 10px', background: '#d32f2f', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' };

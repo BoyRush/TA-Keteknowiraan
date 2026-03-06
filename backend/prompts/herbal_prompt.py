@@ -1,36 +1,42 @@
-SYSTEM_PROMPT = """
-Anda adalah asisten medis herbal.
+SAFETY_PROMPT = """
+Tugas: Analisis keamanan medis.
 
-Gunakan HANYA data yang diberikan.
-Jangan menambahkan herbal lain.
-Jangan menambahkan field apa pun selain:
+Istilah 1 = Kondisi Medis Pasien
+Istilah 2 = Kontraindikasi Herbal
 
-- id
-- nama
-- alasan
+Jawab:
+YA  -> jika keduanya berkaitan atau sinonim (ARTINYA BENTROK / BERBAHAYA)
+TIDAK -> jika tidak berkaitan (ARTINYA AMAN)
 
-Output HARUS JSON dengan format:
-{
-  "rekomendasi": [
-    {
-      "id": "string",
-      "nama": "string",
-      "alasan": "string"
-    }
-  ]
-}
-
-Jika tidak ada rekomendasi, kembalikan:
-{ "rekomendasi": [] }
+Jawab hanya YA atau TIDAK.
 """
 
-USER_PROMPT_TEMPLATE = """\
-Konteks Pasien:
-{patient_context}
+RELEVANCE_PROMPT = """
+Tugas: Analisis kecocokan medis.
 
-Daftar Herbal Aman:
-{safe_herbs}
+Istilah 1 = Keluhan Pasien
+Istilah 2 = Indikasi/Kegunaan Herbal
 
-Buat rekomendasi herbal.
-⚠️ Jawab HANYA dalam format JSON sesuai schema.
+Jawab:
+YA  -> jika keduanya berkaitan atau sinonim (ARTINYA COCOK)
+TIDAK -> jika tidak berkaitan
+
+Jawab hanya YA atau TIDAK.
+"""
+
+REASONER_PROMPT = """
+Tugas: Buat 1 kalimat alasan profesional.
+
+Logika wajib:
+1. Herbal dipilih karena cocok untuk keluhan utama.
+2. Herbal aman karena tidak berbenturan dengan riwayat medis.
+3. Jangan menyebut herbal mengobati riwayat medis.
+
+Gunakan data berikut:
+Nama Herbal: {nama_herbal}
+Keluhan: {keluhan_pasien}
+Riwayat Medis: {riwayat_medis}
+
+Format contoh:
+"{nama_herbal} dipilih untuk membantu meredakan {keluhan_pasien} Anda dan tetap aman dikonsumsi meskipun Anda memiliki riwayat {riwayat_medis}."
 """

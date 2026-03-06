@@ -20,6 +20,7 @@ from services.llm_schema_builder import build_llm_input
 from services.llm_generator import generate_herbal_recommendation
 from services.herbal_retriever import retrieve_relevant_herbs
 from blockchain.contract import web3, contract
+from chroma.herbal_store import embedding_functions
 from flask_cors import CORS
 from dotenv import load_dotenv 
 from datetime import datetime
@@ -29,6 +30,40 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
+client_icd = chromadb.PersistentClient(path="./db_icd10")
+model_ai_icd = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2",
+    device="cpu"
+)
+collection_icd = client_icd.get_collection(name="master_icd10_v2", embedding_function=model_ai_icd)
+
+# --- ENDPOINT UNTUK SMART SEARCH DROPDOWN (ICD-10) ---
+@app.route("/herbal/search-icd", methods=["GET"])
+def search_icd_api():
+    query = request.args.get("q", "")
+    if not query or len(query) < 3:
+        return jsonify([])
+
+    try:
+        # AI (Embedding) mencari 10 penyakit yang paling mirip maknanya
+        results = collection_icd.query(
+            query_texts=[query],
+            n_results=10
+        )
+        
+        formatted_suggestions = []
+        if results and results['ids'] and results['ids'][0]:
+            for i in range(len(results['ids'][0])):
+                # Kita kirim Label (untuk tampilan) dan Value (Kodenya)
+                formatted_suggestions.append({
+                    "label": f"{results['ids'][0][i]} - {results['documents'][0][i]}",
+                    "value": results['ids'][0][i] 
+                })
+        
+        return jsonify(formatted_suggestions)
+    except Exception as e:
+        print(f"❌ Error saat mencari di Chroma ICD: {e}")
+        return jsonify([]), 500
 
 @app.route("/auth/login", methods=["POST"])
 def login_api():
@@ -52,7 +87,6 @@ def login_api():
         }), 200
 
     # B. CEK DOKTER (Medis & Herbal)
-    # Struct: [name, specialty, isApproved, isRegistered]
     doctor_info = contract.functions.doctors(address).call()
     
     if doctor_info[3]:  # Jika isRegistered == True
@@ -228,6 +262,8 @@ def update_herbal(id):
         new_ipfs_cid = upload_json_to_ipfs(herbal_metadata)
         print(f"✅ [UPDATE] IPFS Success: {new_ipfs_cid}")
 
+        full_text_update = f"Herbal: {nama}. Kegunaan: {indikasi}. Peringatan: {kontraindikasi}. Deskripsi: {deskripsi}"
+
         # --- 2. UPDATE DI CHROMADB ---
         collection.upsert(
             ids=[id],
@@ -238,7 +274,7 @@ def update_herbal(id):
                 "kontraindikasi": kontraindikasi,
                 "ipfs_cid": new_ipfs_cid # Simpan CID baru di metadata
             }],
-            documents=[deskripsi]
+            documents=[full_text_update]
         )
         print("✅ [UPDATE] ChromaDB Indexed")
 
@@ -276,53 +312,27 @@ def update_herbal(id):
 
 @app.route("/herbal/recommendation-input", methods=["GET"])
 def recommendation_input():
-    query = request.args.get("q", "").lower() # Ambil query dan jadikan lowercase
+    query = request.args.get("q", "").lower() 
     medical = request.args.get("medical", "")
+    medical_list = [m.strip() for m in medical.split(",") if m.strip()]
 
-    medical_conditions = [m.strip().lower() for m in medical.split(",") if m]
-
-    # 🧠 1. RAG: ambil herbal relevan dari Chroma
+    # 1. RAG: Ambil semua kandidat berdasarkan keluhan (Sinonim keluhan diurus ChromaDB/Embedding)
     herbs_from_rag = retrieve_relevant_herbs(query)
 
-    # 🩺 2. RULE-BASED FILTER (Kondisi Medis/Kontraindikasi)
-    safe_herbs = filter_herbs_by_medical_condition(
-        herbs_from_rag,
-        medical_conditions
-    )
+    if not herbs_from_rag:
+        return jsonify({"rekomendasi": [], "catatan": "Herbal tidak ditemukan."})
 
-    # ✨ 2.5 VALIDATION LAYER: Filter cerdas agar tidak salah alamat
-    strictly_relevant_herbs = []
-    
-    stop_words = ["sakit", "nyeri", "obat", "gejala", "herbal", "alami", "manjur"]
-    
-    # Hanya ambil kata kunci yang unik (misal: "kaki", "tenggorokan", "lambung")
-    query_words = [w for w in query.split() if w not in stop_words and len(w) > 2]
+    # 2. Kirim ke LLM Generator (Sinonim kontraindikasi diurus LoRA)
+    llm_input = {
+        "patient_context": {"keluhan": query, "kondisi_medis": medical_list},
+        "safe_herbs": herbs_from_rag 
+    }
 
-    if not query_words:
-        query_words = query.split()
-
-    for herb in safe_herbs:
-        indikasi = herb.get("indikasi", "").lower()
-        deskripsi = herb.get("deskripsi", "").lower()
-        
-      
-        is_relevant = any(word in indikasi or word in deskripsi for word in query_words)
-
-        if is_relevant:
-            strictly_relevant_herbs.append(herb)
-  
-    # 📦 3. BANGUN INPUT LLM
-    llm_input = build_llm_input(
-        query,
-        medical_conditions,
-        strictly_relevant_herbs 
-    )
-
-    # 🤖 4. LLM (HANYA reasoning & formatting)
-    llm_output = generate_herbal_recommendation(llm_input)
-
-    return jsonify(llm_output)
-
+    try:
+        llm_output = generate_herbal_recommendation(llm_input)
+        return jsonify(llm_output)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 # =========================
 # IPFS  
 # =========================
@@ -366,61 +376,196 @@ def upload_to_ipfs_only():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/medical/store", methods=["POST"])
+@app.route("/medical/list", methods=["GET"])
+def get_medical_list_api():
+    doctor_login = request.args.get("doctor")
+    if not doctor_login:
+        return jsonify({"history": [], "error": "Alamat dokter diperlukan"}), 400
+
+    try:
+        import chromadb
+        client = chromadb.PersistentClient(path="./chroma_db") 
+        collection = client.get_or_create_collection(
+            name="medical_records",
+            embedding_function=model_ai_icd
+        )
+
+        results = collection.get()
+        unique_patients = []
+        if results['metadatas']:
+            unique_patients = list(set([m.get('patient_address', '').lower() for m in results['metadatas']]))
+        
+        history = []
+        for p_addr in unique_patients:
+            try:
+                # --- 🛡️ PERBAIKAN 1: DEFINISIKAN CHECKSUM ---
+                p_checksum = web3.to_checksum_address(p_addr)
+                doctor_checksum = web3.to_checksum_address(doctor_login)
+
+                # Ambil data murni dari Blockchain
+                records = contract.functions.getMedicalRecords(p_checksum).call({
+                    "from": doctor_checksum 
+                })
+                
+                formatted_records = []
+                for idx, rec in enumerate(records):
+                    # 1. Cek status aktif di blockchain (rec[3])
+                    if not rec[3]: 
+                        continue 
+
+                    # 2. Cari teks diagnosa di AI
+                    current_diag = None
+                    for i, meta in enumerate(results['metadatas']):
+                        # --- 🛡️ PERBAIKAN 2: KONVERSI TIPE DATA KE INT ---
+                        meta_index = int(meta.get('index', -1))
+                        if meta.get('patient_address', '').lower() == p_addr.lower() and meta_index == idx:
+                            current_diag = results['documents'][i].replace("Kondisi Medis Pasien: ", "")
+                            break
+                    
+                    # Jika data di Blockchain Aktif tapi teks AI tidak ketemu, jangan skip barisnya, 
+                    # beri info agar kita bisa debug.
+                    if current_diag is None:
+                        current_diag = "[Sync Error] Teks AI tidak ditemukan untuk index ini"
+
+                    formatted_records.append({
+                        "diagnosis": current_diag,
+                        "timestamp": rec[1],
+                        "isActive": True,
+                        "index": idx,
+                        "cid": rec[0]
+                    })
+                
+                if formatted_records:
+                    history.append({"address": p_addr, "medicalRecords": formatted_records})
+
+            except Exception as e:
+                print(f"⚠️ Skip {p_addr} karena: {e}") # Sekarang 'p_checksum' sudah aman
+
+        return jsonify({"history": history}), 200
+    except Exception as e:
+        return jsonify({"history": [], "error": str(e)}), 200
+
+@app.route("/medical/store", methods=["POST", "OPTIONS"])
 def store_medical_api():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "OK"}), 200
+
     data = request.json
-    
-    # 1. PERBAIKAN CHECKSUM: Ubah alamat pasien ke format yang aman bagi Web3
     try:
         raw_address = data.get("patient_address")
         pasien_address = web3.to_checksum_address(raw_address)
-    except Exception as e:
-        return jsonify({"error": f"Format alamat wallet salah: {str(e)}"}), 400
-
-    diagnosa = data.get("diagnosis")
-    pk = os.getenv("ETH_STORAGE_KEY") 
-    
-    try:
-        print(f"--- Memulai Proses Medis untuk Pasien: {pasien_address} ---")
+        diagnosa = data.get("diagnosis")
         
-        # 2. PERBAIKAN DATETIME: Pastikan 'from datetime import datetime' sudah ada di atas
+        # 🛡️ TERIMA INDEX DARI FRONTEND (Mencegah Access Denied)
+        # Jangan nanya contract.functions lagi di sini!
+        blockchain_index = data.get("blockchain_index", 0)
+
+        # 1️⃣ TAHAP IPFS
         medical_metadata = {
             "diagnosis": diagnosa,
             "patient": pasien_address,
             "timestamp": datetime.now().isoformat()
         }
-        
-        # Upload ke IPFS
         ipfs_cid = upload_json_to_ipfs(medical_metadata)
-        print(f"✅ IPFS Medical Success: {ipfs_cid}")
+        print(f"✅ IPFS Success: {ipfs_cid}")
 
-        # 3. TRANSAKSI KE BLOCKCHAIN
-        account = web3.eth.account.from_key(pk)
-        nonce = web3.eth.get_transaction_count(account.address)
+        # 2️⃣ TAHAP CHROMADB (Simpan ke Memori AI)
+        # Menggunakan blockchain_index yang dikirim dari React
+        record_id = f"med_{pasien_address.lower()}_{blockchain_index}"
         
-        tx = contract.functions.storeMedicalRecord(pasien_address, ipfs_cid).build_transaction({
-            'from': account.address,
-            'nonce': nonce,
-            'gas': 500000,
-            'gasPrice': web3.to_wei('50', 'gwei')
+        from chroma.herbal_store import add_medical_to_chroma
+        add_medical_to_chroma(record_id, pasien_address, diagnosa, ipfs_cid, blockchain_index)
+        print(f"✅ ChromaDB Indexed: {record_id}")
+
+        # 3️⃣ RETURN KE REACT
+        return jsonify({
+            "status": "Success",
+            "ipfs_cid": ipfs_cid
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Error Real: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    
+@app.route("/medical/update", methods=["PUT", "OPTIONS"]) # Tambahkan OPTIONS
+def update_medical_record():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "OK"}), 200
+
+    try:
+        data = request.json
+        patient_addr = data.get("patient_address").lower().strip()
+        new_diagnosis = data.get("diagnosis")
+        record_index = data.get("index") # 👈 Kita butuh index dari FE agar tahu mana yang diedit
+
+        # 1. Upload ke IPFS
+        new_cid = upload_json_to_ipfs({
+            "diagnosis": new_diagnosis, 
+            "patient": patient_addr,
+            "timestamp": datetime.now().isoformat(),
+            "status": "updated"
         })
         
-        signed = web3.eth.account.sign_transaction(tx, pk)
-        # Handle perbedaan versi web3 (raw_transaction vs rawTransaction)
-        raw_data = signed.raw_transaction if hasattr(signed, 'raw_transaction') else signed.rawTransaction
-        tx_hash = web3.eth.send_raw_transaction(raw_data)
+        # 2. Update di ChromaDB (Menimpa ID yang spesifik)
+        # ID harus med_alamat_index agar tidak menimpa riwayat penyakit lain
+        from chroma.herbal_store import embedding_function
+        record_id = f"med_{patient_addr}_{record_index}"
         
-        print(f"✅ Blockchain Medical Success: {web3.to_hex(tx_hash)}")
-
+        import chromadb
+        client = chromadb.PersistentClient(path=os.path.join(os.path.dirname(__file__), "chroma_db"))
+        collection = client.get_or_create_collection(name="medical_records")
+        
+        collection.upsert(
+            ids=[record_id],
+            documents=[f"Kondisi Medis Pasien: {new_diagnosis}"],
+            metadatas=[{
+                "patient_address": patient_addr, 
+                "ipfs_cid": new_cid,
+                "index": record_index, # Simpan kembali indexnya
+                "isActive": True
+            }]
+        )
+        
+        print(f"✅ ChromaDB Updated: {record_id}")
         return jsonify({
             "status": "Success", 
-            "ipfs_cid": ipfs_cid, 
-            "tx_hash": web3.to_hex(tx_hash)
-        }), 201
-        
+            "ipfs_cid": new_cid,
+            "index": record_index
+        }), 200
+
     except Exception as e:
-        print(f"❌ ERROR MEDIS: {str(e)}")
+        print(f"❌ Error Update: {str(e)}")
         return jsonify({"error": str(e)}), 500
+    
+@app.route("/medical/delete-by-cid", methods=["DELETE"])
+def delete_medical_by_cid():
+    cid = request.args.get("cid")
+    patient_address = request.args.get("patient").lower()
+    
+    try:
+        import chromadb
+        client = chromadb.PersistentClient(path="./chroma_db")
+        collection = client.get_or_create_collection(name="medical_records", embedding_function=model_ai_icd)
+        
+        # Cari semua metadata milik pasien ini
+        results = collection.get(where={"patient_address": patient_address})
+        
+        # Cari ID mana yang punya CID tersebut
+        target_id = None
+        for i, meta in enumerate(results['metadatas']):
+            if meta.get('ipfs_cid') == cid:
+                target_id = results['ids'][i]
+                break
+        
+        if target_id:
+            collection.delete(ids=[target_id])
+            return jsonify({"message": "Teks di AI berhasil dihapus"}), 200
+        else:
+            return jsonify({"error": "Data tidak ditemukan di AI"}), 404
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # =========================
 # PASIEN
 # =========================
@@ -482,35 +627,24 @@ def reject_access_api():
 @app.route("/patient/request-recommendation", methods=["POST"])
 def patient_request_recommendation():
     data = request.json
-
     patient_address = data["patient_address"]
-    # SEBELUMNYA: data["doctor_private_key"]
-    # SEKARANG: Pakai key pasien sendiri
     patient_private_key = data["patient_private_key"] 
     keluhan = data["keluhan"]
 
-    # 1️⃣ AMBIL DARI BC (Pasien mengakses datanya sendiri)
-    medical_conditions = get_patient_medical_conditions(
-        patient_address,
-        patient_private_key 
-    )
+    # Ambil riwayat (Sudah difilter isActive di service)
+    medical_conditions = get_patient_medical_conditions(patient_address, patient_private_key)
 
-    print("MEDICAL FROM BC:", medical_conditions)
-
-    # 2️⃣ RAG, 3️⃣ RULE-BASED, 4️⃣ LLM (Tetap sama)
-    herbs_from_rag = retrieve_relevant_herbs(keluhan)
-    safe_herbs = filter_herbs_by_medical_condition(herbs_from_rag, medical_conditions)
-    llm_input = build_llm_input(keluhan, medical_conditions, safe_herbs)
-    llm_output = generate_herbal_recommendation(llm_input)
-
-    return jsonify({
+    # Pastikan data yang dikirim ke LLM adalah data paling update
+    # Kita gunakan list(set()) agar penyakit yang sama tidak muncul double
+    llm_input = {
         "patient_context": {
-            "keluhan": keluhan,
-            "kondisi_medis": medical_conditions
+            "keluhan": keluhan, 
+            "kondisi_medis": list(set(medical_conditions)) 
         },
-        "rekomendasi": llm_output
-    })
-
+        "safe_herbs": retrieve_relevant_herbs(expand_query_internal(keluhan)) 
+    }
+    
+    return jsonify(generate_herbal_recommendation(llm_input))
 
 @app.route("/medical/grant", methods=["POST"])
 def grant():
@@ -542,7 +676,7 @@ def store_herbal_api():
     # Ambil data baru dari form
     indikasi = data.get("indikasi")
     kontraindikasi = data.get("kontraindikasi") # Tambahkan ini
-    
+    deskripsi = data.get("deskripsi")
     
     pk = os.getenv("SYSTEM_PRIVATE_KEY")
     
@@ -552,6 +686,7 @@ def store_herbal_api():
             "name": nama,
             "indikasi": indikasi,
             "kontraindikasi": kontraindikasi,
+            "deskripsi": deskripsi
         }
         ipfs_cid = upload_json_to_ipfs(herbal_metadata)
         print(f"✅ IPFS Success: {ipfs_cid}")
@@ -562,6 +697,7 @@ def store_herbal_api():
             indikasi=indikasi, 
             kontraindikasi=kontraindikasi, # Pastikan ini ada!
             cid=ipfs_cid,
+            content=deskripsi
 
         )
         print("✅ ChromaDB Indexed")
@@ -606,6 +742,7 @@ def doctor_request_access_api():
         data["patient_address"]
     )
     return jsonify({"tx_hash": tx_hash, "status": "Request sent to blockchain"})
+
 @app.route("/doctor/medical-records", methods=["GET"])
 def get_records():
     patient = request.args.get("patient")

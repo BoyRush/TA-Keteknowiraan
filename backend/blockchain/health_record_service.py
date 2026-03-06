@@ -26,30 +26,49 @@ def store_medical_record(doctor_pk, patient_addr, cid):
     tx_hash = web3.eth.send_raw_transaction(signed_txn.rawTransaction)
     return web3.to_hex(tx_hash)
 
-def get_patient_medical_conditions(patient_address, doctor_private_key):
+def get_patient_medical_conditions(patient_address, doctor_address):
     try:
-        doctor_account = web3.eth.account.from_key(doctor_private_key)
-
-        records = contract.functions.getMedicalRecords(
-            patient_address
-        ).call({
-            "from": doctor_account.address
+        # Panggil blockchain hanya menggunakan alamat (tanpa tanda tangan PK)
+        records = contract.functions.getMedicalRecords(patient_address).call({
+            "from": doctor_address
         })
-
     except Exception as e:
-        print("ACCESS ERROR:", e)
+        print(f"🕵️ Audit Access: Alamat {doctor_address} dilarang akses pasien {patient_address}")
+        print("DETAIL ERROR:", e)
         return []
 
     conditions = []
     for record in records:
+        if len(record) > 2 and record[2] is False:
+            continue
+
         cid = record[0]
         data = get_json_from_ipfs(cid)
 
-        if data and "kondisi_medis" in data:
-            conditions.extend([c.lower() for c in data["kondisi_medis"]])
+        if data and "diagnosis" in data:
+            diag = data["diagnosis"]
+            conditions.extend([c.strip().lower() for c in diag.split(",") if c.strip()])
 
     return list(set(conditions))
 
+def get_medical_records_as_doctor(patient_address, doctor_address):
+    try:
+        # Pastikan doctor_address yang masuk di sini berasal dari session login React
+        records = contract.functions.getMedicalRecords(patient_address).call({
+            "from": doctor_address
+        })
+
+        return [
+            {
+                "cid": r[0],
+                "timestamp": r[1],
+                "isActive": r[2] if len(r) > 2 else True
+            }
+            for r in records if r[2] is True # Hanya kirim yang aktif ke FE
+        ]
+
+    except Exception as e:
+        return {"error": "Access denied", "details": str(e)}
 
 def grant_access(patient_private_key, doctor_address):
     account = web3.eth.account.from_key(patient_private_key)
@@ -111,24 +130,5 @@ def request_access_from_doctor(doctor_private_key, patient_address):
     tx_hash = web3.eth.send_raw_transaction(signed.raw_transaction)
     return tx_hash.hex()
 
-def get_medical_records_as_doctor(patient_address, doctor_address):
-    try:
-        records = contract.functions.getMedicalRecords(
-            patient_address
-        ).call({
-            "from": doctor_address
-        })
 
-        return [
-            {
-                "cid": r[0],
-                "timestamp": r[1]
-            }
-            for r in records
-        ]
-
-    except (ContractLogicError, BadFunctionCallOutput):
-        return {
-            "error": "Access denied"
-        }
 

@@ -22,6 +22,7 @@ contract StorageHealthRecords {
         string cid;
         uint256 timestamp;
         address createdBy; 
+        bool isActive;
     }
 
     struct HerbalRecord {
@@ -110,17 +111,30 @@ contract StorageHealthRecords {
             "Access denied"
         );
         medicalRecords[_patient].push(
-            MedicalRecord(_cid, block.timestamp, msg.sender)
+            MedicalRecord(_cid, block.timestamp, msg.sender, true)
         );
     }
 
-    function getMedicalRecords(address _patient) public view returns (MedicalRecord[] memory) {
+    function deactivateMedicalRecord(address _patient, uint256 _index) public {
+        // Validasi dasar
+        require(_index < medicalRecords[_patient].length, "Index tidak valid");
+        
+        // Pastikan yang menghapus adalah dokter yang membuat data tersebut
         require(
-            msg.sender == _patient || accessPermission[_patient][msg.sender],
-            "Access denied"
+            msg.sender == medicalRecords[_patient][_index].createdBy,
+            "Hanya dokter pembuat yang bisa menonaktifkan"
         );
-        return medicalRecords[_patient];
+
+        medicalRecords[_patient][_index].isActive = false;
     }
+
+    function getMedicalRecords(address _patient) public view returns (MedicalRecord[] memory) {
+    require(
+        msg.sender == _patient || accessPermission[_patient][msg.sender],
+        "Access denied"
+    );
+    return medicalRecords[_patient];
+}
 
     function storeHerbalData(string memory _cid) public {
         require(verifiedDoctor[msg.sender] && doctors[msg.sender].isApproved, "Doctor not approved");

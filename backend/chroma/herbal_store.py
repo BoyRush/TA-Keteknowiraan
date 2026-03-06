@@ -21,45 +21,64 @@ collection = chroma_client.get_or_create_collection(
     embedding_function=embedding_function
 )
 
-# def add_herbal(doc_id, text, metadata=None):
-#     collection.add(
-#         ids=[doc_id],
-#         documents=[text],
-#         metadatas=[metadata or {}]
-#     )
 
-# Di file herbal_store.py
-def add_herbal(name, indikasi, kontraindikasi, cid, content):
-    # Buat ID unik otomatis
-    doc_id = f"herb_{name.lower().replace(' ', '_')}"
+def add_medical_to_chroma(record_id, patient_address, diagnosis, ipfs_cid, index):
+    # Buat atau ambil koleksi khusus rekam medis
+    # Kita pakai chroma_client yang sudah ada di atas file kamu
+    medical_coll = chroma_client.get_or_create_collection(
+        name="medical_records",
+        embedding_function=embedding_function
+    )
     
-    # Gabungkan semua info untuk pencarian AI
-    full_text = f"Herbal: {name}. Kegunaan: {indikasi}. Deskripsi: {content}"
+    medical_coll.add(
+        ids=[record_id],
+        documents=[f"Kondisi Medis Pasien: {diagnosis}"],
+        metadatas=[{
+            "patient_address": patient_address.lower(),
+            "ipfs_cid": ipfs_cid,
+            "index": index,
+            "isActive": True
+        }]
+    )
+    print(f"✅ [ChromaDB] Berhasil simpan riwayat medis: {record_id}")
+    
+def add_herbal(name, indikasi, kontraindikasi, cid, content):
+    doc_id = f"herb_{name.lower().replace(' ', '_')}"
+
+    full_text_for_embedding = (
+        f"Herbal: {name}. "
+        f"Kegunaan dan Indikasi: {indikasi}. "
+        f"Peringatan/Kontraindikasi: {kontraindikasi}. "
+        f"Penjelasan: {content}"
+    )
+    # --- TAMBAHKAN PRINT INI UNTUK DEBUGGING ---
+    print("\n" + "="*50)
+    print("📤 MENGIRIM KE CHROMADB (FORMAT TXT):")
+    print(full_text_for_embedding)
+    print("="*50 + "\n")
+    # -------------------------------------------
     
     collection.add(
         ids=[doc_id],
-        documents=[full_text],
-        metadatas=[{
-            "name": name,
+        documents=[full_text_for_embedding], 
+        metadatas=[{                         
+            "nama": name,
             "indikasi": indikasi,
             "kontraindikasi": kontraindikasi,
-            "ipfs_cid": cid  # CID IPFS tersimpan di sini
+            "ipfs_cid": cid,
+            "deskripsi": content
         }]
     )
-
 def search_herbal(query, n_results=3):
-    # 1. Kita ambil dulu angka embedding-nya secara manual untuk di-print
     query_embeddings = embedding_function([query])
     
     print("\n" + "="*50)
-    print(f"🔍 KELUHAN PASIEN: '{query}'")
-    print(f"🧬 ANGKA EMBEDDING (Hanya 10 angka pertama dari 384):")
-    # Kita hanya print 10 angka pertama agar terminal tidak penuh
+    print(f"KELUHAN PASIEN: '{query}'")
+    print(f"ANGKA EMBEDDING (Hanya 10 angka pertama dari 384):")
     print(query_embeddings[0][:10]) 
     print(f"... (total ada {len(query_embeddings[0])} angka dalam vektor ini)")
     print("="*50 + "\n")
 
-    # 2. Proses pencarian seperti biasa
     return collection.query(
         query_texts=[query],
         n_results=n_results

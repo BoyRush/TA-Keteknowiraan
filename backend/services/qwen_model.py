@@ -1,53 +1,71 @@
 import torch
 import os
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel 
 
-MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 LORA_PATH = os.path.join(os.path.dirname(__file__), "..", "lora_model_herbal") 
 
-# 1. Load Tokenizer & Model Dasar
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-base_model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    trust_remote_code=True,
-    torch_dtype=torch.float32,
-    device_map="auto"
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_use_double_quant=True,
 )
 
-# 2. Tempelkan Adapter LoRA hasil training Colab
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+
+base_model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME,
+    quantization_config=bnb_config, 
+    device_map="auto",
+    trust_remote_code=True
+)
+
+
 if os.path.exists(LORA_PATH):
-    model = PeftModel.from_pretrained(base_model, LORA_PATH)
-    print("✅ LoRA Adapter (Otak Pakar) Berhasil Terpasang!")
-    print(f"📊 Tipe Model: {type(model)}")
+    model = PeftModel.from_pretrained(
+        base_model, 
+        LORA_PATH, 
+        device_map="auto"
+    )
+    print(" LoRA Adapter (Otak Pakar) Berhasil Terpasang!")
 else:
     model = base_model
-    print("⚠️ Menggunakan Model Standar (Adapter tidak ditemukan)")
+    print(" Menggunakan Model Standar (Adapter tidak ditemukan)")
 
 model.eval()
 
 def generate_qwen(system_prompt, user_prompt):
-    # --- BAGIAN UNTUK MELIHAT DATA RAG ---
-    print("\n" + "="*50)
-    print("📥 DEBUG: DATA RAG DARI CHROMADB MASUK KE PROMPT AI:")
-    print(user_prompt) 
-    print("="*50 + "\n")
-    # -------------------------------------
-
+    # --- DEBUG UNTUK MELIHAT DATA MASUK ---
+    print("\n" + "="*40)
+    print("📥 AI SEDANG BERPIKIR (Mohon Tunggu)...")
+    
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
     ]
     
+    # Memproses template chat
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
+    # PROSES GENERASI YANG LEBIH RINGAN
     with torch.no_grad():
         outputs = model.generate(
             **inputs, 
-            max_new_tokens=512,
-            temperature=0.1, # Rendah agar AI disiplin pada data
-            do_sample=True
+            max_new_tokens=64,   # Kita kecilkan karena hanya butuh 1 kalimat
+            do_sample=False,     # Greedy search: Lebih cepat dan tidak plin-plan
+            # HAPUS temperature=0.1 jika do_sample=False untuk menghindari warning/stuck
+            repetition_penalty=1.1, # Mencegah AI mengulang kata yang sama
+            pad_token_id=tokenizer.eos_token_id
         )
 
-    return tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
+    # 1. Ambil jawaban murni dari AI
+    response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True).strip()
+    
+    # 2. DEBUG UNTUK MELIHAT JAWABAN AI
+    print(f"JAWABAN AI SELESAI: '{response}'")
+    print("="*40 + "\n")
+
+    return response
