@@ -1,6 +1,8 @@
 import { useAuth } from '../../context/AuthContext';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
+import { ethers } from 'ethers';
+import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../../api/contract_abi';
 
 // --- KOMPONEN REUSABLE: ICD-10 MULTI-SELECT SEARCH ---
 function IcdMultiSearch({ label, selectedValues, onChange, placeholder }) {
@@ -125,24 +127,48 @@ export default function HerbalDoctorDashboard() {
         try {
             const isUpdate = !!form.id;
             const url = isUpdate ? `http://localhost:5000/herbal/update/${form.id}` : 'http://localhost:5000/herbal/store';
+            
+            // --- LANGKAH 1: Kirim ke Flask (IPFS & ChromaDB) ---
             const response = await fetch(url, {
                 method: isUpdate ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form)
             });
 
-            if (response.ok) {
-                alert("Data Berhasil Disinkronkan!");
-                setForm({ id: null, name: '', indikasi: '', kontraindikasi: '', deskripsi: '' });
-                fetchHerbalData();
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || "Gagal simpan ke server");
+
+            // --- LANGKAH 2: Tanda Tangan Wallet (MetaMask) ---
+            // Jika ini adalah data baru (bukan update), kita simpan CID-nya ke Blockchain
+            if (!isUpdate) {
+                if (!window.ethereum) return alert("MetaMask tidak ditemukan!");
+                
+                const provider = new ethers.providers.Web3Provider(window.ethereum);
+                const signer = provider.getSigner();
+                const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
+
+                alert("IPFS & AI Berhasil. Sekarang silakan Konfirmasi di MetaMask untuk verifikasi Blockchain.");
+
+                // Panggil fungsi Blockchain (sesuaikan nama fungsi di .sol, misal: storeHerbalData)
+                const tx = await contract.storeHerbalData(result.ipfs_cid);
+                
+                console.log("Menunggu konfirmasi blockchain...");
+                await tx.wait(); 
             }
+
+            alert(isUpdate ? "Data Berhasil Diperbarui!" : "Data Berhasil Disimpan ke Blockchain & AI!");
+            
+            // Reset form dan refresh data
+            setForm({ id: null, name: '', indikasi: '', kontraindikasi: '', deskripsi: '' });
+            fetchHerbalData();
+
         } catch (error) {
-            alert("Gagal simpan.");
+            console.error("Detail Error:", error);
+            alert(`Gagal: ${error.message}`);
         } finally {
             setIsSaving(false);
         }
     };
-
     const handleDelete = async (id) => {
         if (!window.confirm("Hapus data?")) return;
         await fetch(`http://localhost:5000/herbal/delete/${id}`, { method: 'DELETE' });

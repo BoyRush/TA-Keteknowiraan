@@ -176,14 +176,7 @@ def get_all_herbs():
         db_path = os.path.join(base_dir, "chroma_db")
         client = chromadb.PersistentClient(path=db_path)
 
-        existing_collections = client.list_collections()
-        print(f"🔍 KOLEKSI YANG DITEMUKAN DI DB: {[c.name for c in existing_collections]}")
-
-        target_name = "herbal_db"
-        if existing_collections:
-            target_name = existing_collections[0].name
-            print(f"🎯 Dashboard otomatis beralih ke koleksi: {target_name}")
-
+        target_name = "herbal_collection" 
         collection = client.get_or_create_collection(name=target_name)
         results = collection.get() 
         
@@ -192,18 +185,24 @@ def get_all_herbs():
             for i in range(len(results["ids"])):
                 meta = results["metadatas"][i] or {}
                 doc = results["documents"][i] or ""
+                
+                # Sesuaikan key dengan yang ada di metadata kamu
                 herbs.append({
                     "id": results["ids"][i],
-                    "nama": meta.get("name") or meta.get("nama") or doc[:15],
+                    "nama": meta.get("name") or meta.get("nama") or "Tanpa Nama",
                     "indikasi": meta.get("indikasi") or meta.get("kegunaan") or "-",
                     "kontraindikasi": meta.get("kontraindikasi") or "-",
-                    "deskripsi": doc
+                    "deskripsi": doc,
+                    "cid": meta.get("cid") or meta.get("ipfs_cid") or "-"
                 })
         
         print(f"✅ Dashboard Berhasil Menarik: {len(herbs)} data dari {target_name}")
         return jsonify(herbs), 200
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Error tarik data: {e}")
+        # Kalau koleksi belum ada, kirim list kosong saja agar frontend tidak crash
+        return jsonify([]), 200
     
 @app.route("/herbal/delete/<id>", methods=["DELETE"])
 def delete_herb(id):
@@ -678,7 +677,6 @@ def store_herbal_api():
     kontraindikasi = data.get("kontraindikasi") # Tambahkan ini
     deskripsi = data.get("deskripsi")
     
-    pk = os.getenv("SYSTEM_PRIVATE_KEY")
     
     try:
         # 1. IPFS Upload
@@ -701,31 +699,10 @@ def store_herbal_api():
 
         )
         print("✅ ChromaDB Indexed")
-
-        # 3. Blockchain
-        account = web3.eth.account.from_key(pk)
-        nonce = web3.eth.get_transaction_count(account.address)
-        
-        tx = contract.functions.storeHerbalData(ipfs_cid).build_transaction({
-            'from': account.address,
-            'nonce': nonce,
-            'gas': 500000,
-            'gasPrice': web3.to_wei('50', 'gwei')
-        })
-        
-        signed = web3.eth.account.sign_transaction(tx, pk)
-
-        raw_data = signed.raw_transaction if hasattr(signed, 'raw_transaction') else signed.rawTransaction
-        
-        tx_hash = web3.eth.send_raw_transaction(raw_data)
-        # ------------------------------------
-
-        print(f"✅ Blockchain Success: {web3.to_hex(tx_hash)}")
         
         return jsonify({
             "status": "Success", 
             "ipfs_cid": ipfs_cid, 
-            "blockchain_tx": web3.to_hex(tx_hash)
         }), 201
 
     except Exception as e:
