@@ -344,6 +344,53 @@ def get_admin_dashboard_stats():
     except Exception as e:
         print(f"Error Admin Stats: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/admin/users", methods=["GET"])
+def get_all_users_admin():
+    """Endpoint untuk menampilkan semua pengguna terdaftar (pasien & dokter) di halaman Kelola Pengguna."""
+    try:
+        all_user_addrs = contract.functions.getAllUsers().call()
+        admin_addr = contract.functions.admin().call()
+
+        users = []
+        for addr in all_user_addrs:
+            checksum_acc = web3.to_checksum_address(addr)
+            if checksum_acc == admin_addr:
+                continue  # Lewati akun admin
+
+            # Cek apakah dia Pasien
+            p_name = contract.functions.patientNames(checksum_acc).call()
+            if p_name != "":
+                users.append({
+                    "name": p_name,
+                    "address": checksum_acc,
+                    "role": "Pasien",
+                    "status": "active"  # Pasien selalu aktif setelah register
+                })
+                continue
+
+            # Cek apakah dia Dokter
+            doc = contract.functions.doctors(checksum_acc).call()
+            # doc structure: [name, specialty, isApproved, isRegistered]
+            if doc[3]:  # isRegistered
+                role_label = "Dokter Herbal" if "herbal" in doc[1].lower() else "Dokter Medis"
+                if doc[2]:  # isApproved
+                    status = "active"
+                else:
+                    status = "pending"
+                users.append({
+                    "name": doc[0] or "Tanpa Nama",
+                    "address": checksum_acc,
+                    "role": role_label,
+                    "status": status
+                })
+
+        return jsonify({"status": "success", "users": users, "total": len(users)}), 200
+
+    except Exception as e:
+        print(f"Error Get All Users: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # =========================
 # HERBAL (SEMANTIC SEARCH)
 # =========================

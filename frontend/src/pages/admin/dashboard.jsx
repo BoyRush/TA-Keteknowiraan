@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from '../../components/Sidebar';
 import BerandaAdmin from './BerandaAdmin';
 import VerifikasiAkun from './VerifikasiAkun';
+import KelolaPengguna from './KelolaPengguna';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/router';
 import { ethers } from 'ethers';
@@ -126,6 +127,9 @@ export default function AdminDashboard() {
             onApprove={handleApprove}
             onReject={handleReject}
           />
+        )}
+        {activeTab === 'pengguna' && (
+          <KelolaPengguna />
         )}
         {activeTab === 'profil' && (
           <ProfilSaya />
