@@ -168,7 +168,7 @@ setMedicalRecords(finalData);
             
             const tx = await contract.revokeAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
             await tx.wait();
-            await fetch("http://localhost:5000/notifications/add", {
+            await fetch("http://127.0.0.1:5000/notifications/add", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -233,7 +233,7 @@ setMedicalRecords(finalData);
       const tx = await contract.grantAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
       alert("Transaksi dikirim, tunggu konfirmasi...");
       await tx.wait();
-      await fetch("http://localhost:5000/notifications/add", {
+      await fetch("http://127.0.0.1:5000/notifications/add", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -254,7 +254,7 @@ setMedicalRecords(finalData);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider.getSigner());
       const tx = await contract.rejectAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
       await tx.wait();
-      await fetch("http://localhost:5000/notifications/add", {
+      await fetch("http://127.0.0.1:5000/notifications/add", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -289,7 +289,7 @@ setMedicalRecords(finalData);
     const loadNotifications = async () => {
     if (!address) return;
     try {
-      const res = await fetch(`http://localhost:5000/notifications?address=${address}`);
+      const res = await fetch(`http://127.0.0.1:5000/notifications?address=${address}`);
       if (res.ok) {
         const data = await res.json();
         setNotifs(data);

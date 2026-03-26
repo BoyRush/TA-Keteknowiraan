@@ -58,7 +58,7 @@
       const prepareEdit = (record) => {
           setPatientAddr(record.patientAddress);
           setMedicalData(record.diagnosis);
-          setSelectedRecordIndex(record.originalIndex); 
+          setSelectedRecordIndex(record.blockchainIndex || 0); // Use the correct mapped index
           setIsEditMode(true);
           setActiveTab('input'); // Pindah ke tab input otomatis
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -76,7 +76,7 @@
             console.log("📡 Mengirim transaksi ke Blockchain untuk index:", index);
             const tx = await contract.deactivateMedicalRecord(
                 ethers.utils.getAddress(patientAddress), 
-                index
+                index !== undefined && index !== null ? index : 0
             );
             
             alert("Sedang memproses di Blockchain... Mohon tunggu.");
@@ -161,11 +161,16 @@
               }
 
               // Simpan ke Blockchain
-              const tx = isEditMode 
-                  ? await contract.updateMedicalRecord(patientChecksum, selectedRecordIndex, currentCid)
-                  : await contract.storeMedicalRecord(patientChecksum, currentCid);
-              
-              await tx.wait();
+              if (isEditMode) {
+                  // Edit = Nonaktifkan record lama + simpan record baru
+                  const txDeactivate = await contract.deactivateMedicalRecord(patientChecksum, selectedRecordIndex);
+                  await txDeactivate.wait();
+                  const txStore = await contract.storeMedicalRecord(patientChecksum, currentCid);
+                  await txStore.wait();
+              } else {
+                  const tx = await contract.storeMedicalRecord(patientChecksum, currentCid);
+                  await tx.wait();
+              }
 
               // Notifikasi ke Pasien
               const ringkasan = medicalData.substring(0, 30) + "...";
@@ -352,16 +357,19 @@
       const allFormattedInputs = patientsHistory.flatMap(p => 
         (p.medicalRecords || [])
           .filter(r => r.isActive)
-          .map(r => ({
-            patientName: p.name || `${p.address.substring(0, 6)}...`,
-            // Perbaikan Timestamp: dikali 1000 agar jadi milidetik
-            date: new Date(r.timestamp * 1000).toLocaleDateString('id-ID', {
-                day: 'numeric', month: 'short', year: 'numeric'
-            }),
-            diagnosis: r.diagnosis,
-            tags: [r.diagnosis.substring(0, 15) + "..."],
-            rawTimestamp: r.timestamp
-          }))
+          .map(r => {
+            const isIsoString = typeof r.timestamp === 'string';
+            const rawDateObj = isIsoString ? new Date(r.timestamp) : new Date(r.timestamp * 1000);
+            return {
+              patientName: p.name || `${p.address.substring(0, 6)}...`,
+              date: rawDateObj.toLocaleDateString('id-ID', {
+                  day: 'numeric', month: 'short', year: 'numeric'
+              }),
+              diagnosis: r.diagnosis,
+              tags: [r.diagnosis.substring(0, 15) + "..."],
+              rawTimestamp: isIsoString ? rawDateObj.getTime() : r.timestamp * 1000
+            };
+          })
       ).sort((a, b) => b.rawTimestamp - a.rawTimestamp); // Urutkan terbaru di atas
 
       return (

@@ -1,16 +1,18 @@
 import React from 'react';
 
 const RiwayatInput = ({ patientsHistory, onEdit, onDelete, txLoading }) => {
-  // Melakukan flattening data: menggabungkan semua rekam medis dari semua pasien menjadi satu list
+// Melakukan flattening data: menggabungkan semua rekam medis dari semua pasien menjadi satu list
   const allRecords = patientsHistory.flatMap(p => 
     (p.medicalRecords || [])
       .map((rec, i) => ({ 
         ...rec, 
         patientName: p.name || "Pasien", 
         patientAddress: p.address,
-        blockchainIndex: rec.index !== undefined ? rec.index : i
+        blockchainIndex: (rec.index !== undefined && rec.index !== null) ? rec.index : i,
+        // Konversi timestamp string ISO atau Unix
+        dateObj: typeof rec.timestamp === 'string' ? new Date(rec.timestamp) : new Date(rec.timestamp * 1000)
       }))
-  ).sort((a, b) => b.timestamp - a.timestamp); // Urutkan terbaru di atas
+  ).sort((a, b) => b.dateObj - a.dateObj); // Urutkan terbaru di atas
 
   return (
     <div className="menu-wrapper">
@@ -43,10 +45,10 @@ const RiwayatInput = ({ patientsHistory, onEdit, onDelete, txLoading }) => {
                   </td>
                   <td>
                     <div className="p-date">
-                      {new Date(rec.timestamp * 1000).toLocaleDateString('id-ID')}
+                      {rec.dateObj.toLocaleDateString('id-ID')}
                     </div>
                     <div className="p-time">
-                      {new Date(rec.timestamp * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                      {rec.dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </td>
                   <td>

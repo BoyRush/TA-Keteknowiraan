@@ -55,9 +55,11 @@ const PasienSaya = ({ changeTab }) => {
 if (records && records.length > 0) {
     for (let rec of records) {
         // CEK STATUS: Hanya ambil jika diagnosa TIDAK dihapus / MASIH aktif
-        // Sesuaikan 'rec.isActive' dengan nama variabel di Smart Contract kamu
-        if (rec.isActive === false) {
-            console.log(`🚫 [DEBUG] Skip diagnosa yang sudah dihapus/nonaktif`);
+        // Ethers.js kadang mengembalikan data sebagai array, jadi cek index ke-3
+        const isActuallyActive = rec.isActive !== undefined ? rec.isActive : rec[3];
+        // Gunakan pengecekan truthy/falsy yang kuat! Ethers terkadang mengirim 'false' atau false atau undefined
+        if (!isActuallyActive || isActuallyActive === "false" || isActuallyActive === 0) {
+            console.log(`🚫 [DEBUG] Skip diagnosa yang sudah Nonaktif:`, rec.cid);
             continue; 
         }
 

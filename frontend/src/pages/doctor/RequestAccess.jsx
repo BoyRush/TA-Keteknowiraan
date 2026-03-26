@@ -72,7 +72,7 @@ const RequestAccess = ({
           <table className="request-table">
             <thead>
               <tr>
-                <th>Informasi Pasien</th> {/* Satu kolom untuk Nama & Wallet */}
+                <th>Informasi Pasien</th>
                 <th>Status</th>
                 <th>Waktu</th>
               </tr>

@@ -7,7 +7,7 @@ const NotifikasiDokter = ({ address }) => {
     const fetchNotifs = async () => {
       console.log("📡 [DEBUG] Memulai fetch notifikasi untuk:", address);
       try {
-        const res = await fetch(`http://localhost:5000/notifications?address=${address}`);
+        const res = await fetch(`http://127.0.0.1:5000/notifications?address=${address}`);
         
         if (!res.ok) {
           console.error("❌ [DEBUG] Response API Error:", res.status);

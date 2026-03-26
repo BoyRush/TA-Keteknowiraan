@@ -7,7 +7,7 @@ const NotifikasiPasien = ({ address }) => {
     // Panggil fetch ke endpoint /notifications?address=...
     const fetchNotifs = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/notifications?address=${address}`);
+        const res = await fetch(`http://127.0.0.1:5000/notifications?address=${address}`);
         const data = await res.json();
         setNotifs(data);
       } catch (e) { console.error(e); }

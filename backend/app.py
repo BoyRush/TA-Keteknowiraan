@@ -715,7 +715,23 @@ def get_medical_list_api():
             })
 
         # Format ulang agar sesuai dengan state 'patients' di React
-        history = [{"address": addr, "medicalRecords": recs} for addr, recs in temp_history.items()]
+        # Tambahkan nama pasien dari blockchain
+        history = []
+        for addr, recs in temp_history.items():
+            patient_name = "Pasien"
+            try:
+                p_checksum = web3.to_checksum_address(addr)
+                patient_name = contract.functions.patientNames(p_checksum).call()
+                if not patient_name:
+                    patient_name = f"{addr[:6]}...{addr[-4:]}"
+            except:
+                patient_name = f"{addr[:6]}...{addr[-4:]}"
+            
+            history.append({
+                "address": addr, 
+                "name": patient_name,
+                "medicalRecords": recs
+            })
         
         return jsonify({"history": history}), 200
 
@@ -749,7 +765,7 @@ def store_medical_api():
 
         # 2️⃣ TAHAP CHROMADB (Simpan ke Memori AI)
         # Menggunakan blockchain_index yang dikirim dari React
-        record_id = f"med_{pasien_address.lower()}_{int(time.time())}"
+        record_id = f"med_{pasien_address.lower()}_{blockchain_index}"
         
         from chroma.herbal_store import add_medical_to_chroma
         add_medical_to_chroma(record_id, pasien_address, diagnosa, ipfs_cid, blockchain_index)
@@ -800,7 +816,8 @@ def update_medical_record():
                 "patient_address": patient_addr, 
                 "ipfs_cid": new_cid,
                 "index": record_index, # Simpan kembali indexnya
-                "isActive": True
+                "isActive": True,
+                "timestamp": datetime.now().isoformat()
             }]
         )
         
