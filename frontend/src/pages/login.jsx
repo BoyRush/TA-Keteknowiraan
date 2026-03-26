@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../context/AuthContext';
+import { ethers } from 'ethers';
+import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../api/contract_abi';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -8,6 +10,7 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [adminAddress, setAdminAddress] = useState(null);
+    const [isCheckingAdmin, setIsCheckingAdmin] = useState(true)
 
     // Custom UI Notifications States
     const [toast, setToast] = useState(null);
@@ -15,6 +18,7 @@ export default function LoginPage() {
     const [inlineError, setInlineError] = useState("");
 
     const fetchAdminFromChain = async () => {
+        setIsCheckingAdmin(true);
         if (typeof window !== 'undefined' && window.ethereum) {
             try {
                 const provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -23,7 +27,11 @@ export default function LoginPage() {
                 setAdminAddress(currentAdmin.toLowerCase());
             } catch (error) {
                 console.error("Gagal mengambil data admin dari blockchain", error);
+            } finally {
+                setIsCheckingAdmin(false); 
             }
+        }else {
+            setIsCheckingAdmin(false);
         }
     };
 
@@ -31,7 +39,7 @@ export default function LoginPage() {
         fetchAdminFromChain();
     }, []);
 
-    const isAdmin = address?.toLowerCase() === adminAddress;
+    const isAdmin = address?.toLowerCase() === adminAddress?.toLowerCase();
 
     const showToast = (message, type = "success") => {
         setToast({ message, type });
@@ -118,24 +126,39 @@ export default function LoginPage() {
                             <p style={{ margin: '4px 0 0', fontWeight: 'bold', fontSize: '0.85rem', wordBreak: 'break-all' }}>{address}</p>
                         </div>
                         
-                        {!isAdmin && (
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', color: '#4a5568' }}>Password:</label>
-                                <input 
-                                    type="password" 
-                                    value={password}
-                                    onChange={(e) => {
-                                        setPassword(e.target.value);
-                                        if (inlineError) setInlineError(""); // clear error on type
-                                    }}
-                                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid ${inlineError ? '#e53e3e' : '#cbd5e0'}`, outline: 'none' }}
-                                    placeholder="Masukkan password Anda"
-                                />
-                                {/* INLINE ERROR NOTIFICATION */}
-                                {inlineError && <p style={{ color: '#e53e3e', fontSize: '0.8rem', marginTop: '6px', marginBottom: 0 }}>⚠️ {inlineError}</p>}
-                            </div>
-                        )}
-
+                {isCheckingAdmin ? (
+                    <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+                        <p style={{ fontSize: '0.85rem', color: '#718096' }}>⏳ Memverifikasi Otoritas Admin...</p>
+                    </div>
+                ) : (
+                    /* 2. Jika pengecekan SELESAI dan ternyata BUKAN Admin, baru munculkan input password */
+                    !isAdmin && (
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', marginBottom: '8px', color: '#4a5568' }}>Password:</label>
+                            <input 
+                                type="password" 
+                                value={password}
+                                onChange={(e) => {
+                                    setPassword(e.target.value);
+                                    if (inlineError) setInlineError(""); 
+                                }}
+                                style={{ 
+                                    width: '100%', 
+                                    padding: '12px', 
+                                    borderRadius: '8px', 
+                                    border: `1px solid ${inlineError ? '#e53e3e' : '#cbd5e0'}`, 
+                                    outline: 'none' 
+                                }}
+                                placeholder="Masukkan password Anda"
+                            />
+                            {inlineError && (
+                                <p style={{ color: '#e53e3e', fontSize: '0.8rem', marginTop: '6px', marginBottom: 0 }}>
+                                    ⚠️ {inlineError}
+                                </p>
+                            )}
+                        </div>
+                    )
+                )}
                         <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px', fontSize: '1rem', cursor: 'pointer', background: '#38a169', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', opacity: loading ? 0.7 : 1 }}>
                             {loading ? 'Memproses...' : 'Login Aplikasi'}
                         </button>
