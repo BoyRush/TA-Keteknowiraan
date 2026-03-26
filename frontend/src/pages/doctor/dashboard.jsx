@@ -9,6 +9,7 @@
     import NotifikasiDokter from './NotifikasiDokter';
     import InputDataMedis from './InputDataMedis';
     import RiwayatInput from './RiwayatInput';
+    import ProfilSaya from '../../components/ProfilSaya';
 
     const DoctorDashboard = () => {
       const { address, userName, role, loading } = useAuth();
@@ -88,14 +89,6 @@
         }
     };
 
-      {activeTab === 'riwayat' && (
-          <RiwayatInput 
-              patientsHistory={patientsHistory} 
-              onEdit={prepareEdit} 
-              onDelete={handleDeleteMedical}
-              txLoading={txLoading}
-          />
-      )}
       const handleSaveMedicalData = async (e) => {
           e.preventDefault();
           if (!patientAddr) return alert("Pilih pasien terlebih dahulu!");
@@ -416,6 +409,9 @@
                     onDelete={handleDeleteMedical}
                     txLoading={txLoading}
                 />
+            )}
+            {activeTab === 'profil' && (
+                <ProfilSaya />
             )}
           </main>
 

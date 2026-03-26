@@ -4,6 +4,7 @@ import BerandaAdmin from './BerandaAdmin';
 import { useAuth } from '../../context/AuthContext';
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../../api/contract_abi';
+import ProfilSaya from '../../components/ProfilSaya';
 
 export default function AdminDashboard() {
   const { address, role, loading: authLoading } = useAuth();
@@ -104,6 +105,9 @@ export default function AdminDashboard() {
         )}
         
         {activeTab === 'verifikasi' && <div className="p-20">Halaman Verifikasi Lengkap...</div>}
+        {activeTab === 'profil' && (
+          <ProfilSaya />
+        )}
       </main>
 
       <style jsx>{`

@@ -3,6 +3,7 @@ import Sidebar from '../../components/Sidebar';
 import BerandaHerbal from './BerandaHerbal';
 import KatalogHerbal from './KatalogHerbal'; 
 import TambahHerbal from './TambahHerbal'; // Pastikan diimpor
+import ProfilSaya from '../../components/ProfilSaya';
 import { useAuth } from '../../context/AuthContext';
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../../api/contract_abi';
@@ -93,7 +94,12 @@ export default function HerbalDoctorDashboard() {
       
     } catch (error) {
       console.error("❌ [DEBUG] Error saat simpan:", error);
-      alert(`Gagal: ${error.message}`);
+      const errMsg = error.message || "";
+      if (errMsg.includes("5001") || errMsg.includes("IPFS") || errMsg.includes("Failed to establish") || errMsg.includes("connection")) {
+        alert("Gagal: IPFS Daemon tidak berjalan.\n\nPastikan Anda sudah menjalankan 'ipfs daemon' di terminal dan port 5001 aktif.");
+      } else {
+        alert(`Gagal: ${errMsg}`);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -176,6 +182,10 @@ export default function HerbalDoctorDashboard() {
                 onEdit={prepareEdit}
                 onDelete={handleDelete}
              />
+          )}
+
+          {activeTab === 'profil' && (
+            <ProfilSaya />
           )}
         </section>
       </main>

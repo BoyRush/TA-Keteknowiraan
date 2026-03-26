@@ -77,8 +77,8 @@ const RequestAccess = ({
                 <th>Waktu</th>
               </tr>
             </thead>
-<tbody>
-  {/* 1. TAMPILKAN YANG SUDAH DISETUJUI (Approved) */}
+            <tbody>
+              {/* 1. TAMPILKAN YANG SUDAH DISETUJUI (Approved) */}
   {approvedDocs.length > 0 && approvedDocs.map((req, idx) => (
     <tr key={`app-${idx}`}>
       <td className="info-cell">
@@ -106,26 +106,15 @@ const RequestAccess = ({
     </tr>
   ))}
 
-  {typeof rejectedRequests !== 'undefined' && rejectedRequests.map((req, idx) => (
-    <tr key={`rej-${idx}`}>
-      <td className="info-cell">
-        <div className="patient-name">{req.name}</div>
-        <div className="patient-addr">{req.address.substring(0, 16)}...</div>
-      </td>
-      <td>
-        <span className="status-tag rejected">Ditolak</span>
-      </td>
-      <td className="time-cell">Oleh Pasien</td>
-    </tr>
-  ))}
+              {/* 3. TAMPILKAN YANG DITOLAK (Rejected) - Jika tersedia */}
 
-  {/* 4. JIKA SEMUA KOSONG */}
-  {approvedDocs.length === 0 && pendingRequests.length === 0 && (
-    <tr>
-      <td colSpan="3" className="empty-row">Belum ada riwayat permintaan akses.</td>
-    </tr>
-  )}
-</tbody>
+              {/* 4. JIKA SEMUA KOSONG */}
+              {approvedDocs.length === 0 && pendingRequests.length === 0 && (
+                <tr>
+                  <td colSpan="3" className="empty-row">Belum ada riwayat permintaan akses.</td>
+                </tr>
+              )}
+            </tbody>
           </table>
         </div>
         </div>

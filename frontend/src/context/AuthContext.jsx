@@ -4,14 +4,43 @@ import { useRouter } from 'next/router';
 
 const AuthContext = createContext();
 
+// Helper: Baca session dari localStorage saat pertama kali mount
+const getStoredSession = () => {
+    if (typeof window === 'undefined') return null;
+    try {
+        const stored = localStorage.getItem('herbalchain_session');
+        if (stored) return JSON.parse(stored);
+    } catch (e) { /* ignore */ }
+    return null;
+};
+
 export const AuthProvider = ({ children }) => {
     const { address, isConnected } = useWeb3ModalAccount();
     const { open } = useWeb3Modal();
-    const [user, setUser] = useState({ address: null, role: null, userName: null, status: null });
+    
+    // Inisialisasi state dari localStorage jika ada
+    const storedSession = getStoredSession();
+    const [user, setUser] = useState(
+        storedSession 
+            ? { address: storedSession.address, role: storedSession.role, userName: storedSession.userName, status: storedSession.status }
+            : { address: null, role: null, userName: null, status: null }
+    );
     const [loading, setLoading] = useState(false);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState(storedSession ? true : false);
     const router = useRouter();
-    const prevAddressRef = useRef(null);
+    const prevAddressRef = useRef(storedSession?.address || null);
+
+    // Simpan session ke localStorage setiap kali user state berubah
+    useEffect(() => {
+        if (user.role && user.address) {
+            localStorage.setItem('herbalchain_session', JSON.stringify({
+                address: user.address,
+                role: user.role,
+                userName: user.userName,
+                status: user.status
+            }));
+        }
+    }, [user]);
 
     const connectWallet = async () => {
         try {
@@ -68,17 +97,23 @@ export const AuthProvider = ({ children }) => {
             if (prevAddressRef.current && prevAddressRef.current !== address) {
                 // Akun MetaMask berubah → reset state dan redirect ke register
                 console.log('🔄 MetaMask account changed, redirecting to /register');
-                setUser({ address: address, role: null });
+                setUser({ address: address, role: null, userName: null, status: null });
                 setIsAuthenticated(false);
+                localStorage.removeItem('herbalchain_session');
                 router.push('/register');
             } else {
-                // Set address awal
+                // Set address awal (jangan timpa role/userName yang sudah di-restore)
                 setUser(prev => ({ ...prev, address: address }));
             }
             prevAddressRef.current = address;
         } else if (!isConnected) {
-            setUser({ address: null, role: null, userName: null, status: null });
-            setIsAuthenticated(false);
+            // Wallet disconnected — tapi JANGAN reset jika ada session tersimpan
+            // Ini mencegah sidebar hilang saat MetaMask belum selesai reconnect
+            const stored = getStoredSession();
+            if (!stored) {
+                setUser({ address: null, role: null, userName: null, status: null });
+                setIsAuthenticated(false);
+            }
             prevAddressRef.current = null;
         }
     }, [isConnected, address]);
@@ -93,6 +128,14 @@ export const AuthProvider = ({ children }) => {
         }
     }, [isConnected, address, isAuthenticated]);
 
+    const logout = () => {
+        setUser({ address: null, role: null, userName: null, status: null });
+        setIsAuthenticated(false);
+        prevAddressRef.current = null;
+        localStorage.removeItem('herbalchain_session');
+        router.push('/login');
+    };
+
     return (
         <AuthContext.Provider value={{ 
             ...user, 
@@ -100,7 +143,8 @@ export const AuthProvider = ({ children }) => {
             loading, 
             isAuthenticated,
             connectWallet, 
-            loginWithPassword 
+            loginWithPassword,
+            logout
         }}>
             {children}
         </AuthContext.Provider>

@@ -32,6 +32,7 @@ const Sidebar = ({ activeTab, setActiveTab, dokterCount, notifications = {} }) =
       { id: 'akses_dokter', label: 'Akses Dokter', icon: <UserCheck size={20} />, badgeKey: 'dokterCount' },
       { id: 'riwayat_rekomendasi', label: 'Riwayat Rekomendasi', icon: <Clock size={20} />, badgeKey: null },
       { id: 'notifikasi', label: 'Notifikasi', icon: <Bell size={20} />, badgeKey: 'notifCount' },
+      { id: 'profil', label: 'Profil Saya', icon: <Settings size={20} /> },
     ],
     doctor: [
       { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} /> },
