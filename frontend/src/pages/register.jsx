@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAuth } from '../context/AuthContext';
 import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../api/contract_abi';
@@ -8,19 +8,36 @@ import axios from 'axios';
 export default function RegisterPage() {
     const { address, isConnected, connectWallet } = useAuth();
     const router = useRouter();
+    const [name, setName] = useState(''); 
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [role, setRole] = useState('patient');
     const [specialty, setSpecialty] = useState('');
     const [loading, setLoading] = useState(false);
+    const [adminAddress, setAdminAddress] = useState(null);
 
     // Custom UI Notifications States
     const [toast, setToast] = useState(null);
     const [popup, setPopup] = useState(null);
     const [inlineErrors, setInlineErrors] = useState({});
 
-    const ADMIN_WALLET = "0xf51de12261F60B677fdf4306B6FF54dC98aeAcA3".toLowerCase();
-    const isAdmin = address?.toLowerCase() === ADMIN_WALLET;
+    const fetchAdminFromChain = async () => {
+        if (typeof window !== 'undefined' && window.ethereum) {
+            try {
+                const provider = new ethers.providers.Web3Provider(window.ethereum);
+                const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider);
+                const currentAdmin = await contract.admin(); // Panggil fungsi admin() di Smart Contract
+                setAdminAddress(currentAdmin.toLowerCase());
+            } catch (error) {
+                console.error("Gagal fetch admin address:", error);
+            }
+        }
+    };
+    useEffect(() => {
+        fetchAdminFromChain();
+    }, []);
+
+    const isAdmin = address?.toLowerCase() === adminAddress;
 
     const showToast = (message, type = "success") => {
         setToast({ message, type });
@@ -39,6 +56,7 @@ export default function RegisterPage() {
 
         // Inline Field Validations
         let errs = {};
+        if (!name.trim()) errs.name = "Nama lengkap wajib diisi!";
         if (!password) errs.password = "Password tidak boleh kosong!";
         if (password && password !== confirmPassword) errs.confirmPassword = "Konfirmasi password tidak cocok!";
         if (role === 'doctor' && !specialty) errs.specialty = "Kategori spesialisasi dokter wajib dipilih!";
@@ -57,6 +75,7 @@ export default function RegisterPage() {
             // 1. Simpan ke Backend (MySQL + Password)
             const res = await axios.post('http://127.0.0.1:5000/auth/register', {
                 address: address,
+                name: name,
                 password: password,
                 role: role
             }, { validateStatus: (status) => status < 500 });
@@ -71,18 +90,17 @@ export default function RegisterPage() {
             }
 
             // 2. Lanjutkan ke Blockchain menggunakan Wallet Address sebagai Nama
-            const nameAsAddress = address.toLowerCase();
 
             try {
                 if (role === 'patient') {
-                    const tx = await contract.registerPatient(nameAsAddress);
+                    const tx = await contract.registerPatient(name);
                     await tx.wait();
                     setPopup({ 
                         title: "Berhasil!", 
                         message: "Registrasi Pasien Berhasil! Anda akan dialihkan ke halaman Login." 
                     });
                 } else {
-                    const tx = await contract.registerDoctor(nameAsAddress, specialty);
+                    const tx = await contract.registerDoctor(name, specialty);
                     await tx.wait();
                     setPopup({ 
                         title: "Berhasil!", 
@@ -164,6 +182,12 @@ export default function RegisterPage() {
                         <div style={{ marginBottom: '20px', padding: '10px', background: '#f7fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                             <small style={{ color: '#718096' }}>Wallet terhubung:</small>
                             <p style={{ margin: '4px 0 0', fontWeight: 'bold', fontSize: '0.85rem', wordBreak: 'break-all' }}>{address}</p>
+                        </div>
+
+                        <div style={{ marginBottom: '15px' }}>
+                            <label>Nama Lengkap:</label>
+                            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nama Lengkap" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ddd' }} />
+                            {inlineErrors.name && <p style={{ color: 'red', fontSize: '12px' }}>{inlineErrors.name}</p>}
                         </div>
 
                         <div style={{ marginBottom: '20px' }}>

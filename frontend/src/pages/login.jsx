@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../context/AuthContext';
 
@@ -7,19 +7,36 @@ export default function LoginPage() {
     const { address, isConnected, connectWallet, loginWithPassword } = useAuth();
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const [adminAddress, setAdminAddress] = useState(null);
 
     // Custom UI Notifications States
     const [toast, setToast] = useState(null);
     const [popup, setPopup] = useState(null);
     const [inlineError, setInlineError] = useState("");
 
+    const fetchAdminFromChain = async () => {
+        if (typeof window !== 'undefined' && window.ethereum) {
+            try {
+                const provider = new ethers.providers.Web3Provider(window.ethereum);
+                const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider);
+                const currentAdmin = await contract.admin();
+                setAdminAddress(currentAdmin.toLowerCase());
+            } catch (error) {
+                console.error("Gagal mengambil data admin dari blockchain", error);
+            }
+        }
+    };
+
+    useEffect(() => {
+        fetchAdminFromChain();
+    }, []);
+
+    const isAdmin = address?.toLowerCase() === adminAddress;
+
     const showToast = (message, type = "success") => {
         setToast({ message, type });
         setTimeout(() => setToast(null), 3000);
     };
-
-    const ADMIN_WALLET = "0xf51de12261F60B677fdf4306B6FF54dC98aeAcA3".toLowerCase();
-    const isAdmin = address?.toLowerCase() === ADMIN_WALLET;
 
     const handleConnectWallet = async () => {
         if (typeof window !== 'undefined' && !window.ethereum) {
@@ -96,9 +113,10 @@ export default function LoginPage() {
                     </button>
                 ) : (
                     <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} style={{ textAlign: 'left' }}>
-                        <p style={{ fontSize: '0.85rem', color: '#718096', marginBottom: '16px' }}>
-                            Connected: <strong>{displayAddress}</strong>
-                        </p>
+                        <div style={{ marginBottom: '20px', padding: '10px', background: '#f7fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                            <small style={{ color: '#718096' }}>Wallet terhubung:</small>
+                            <p style={{ margin: '4px 0 0', fontWeight: 'bold', fontSize: '0.85rem', wordBreak: 'break-all' }}>{address}</p>
+                        </div>
                         
                         {!isAdmin && (
                             <div style={{ marginBottom: '20px' }}>
