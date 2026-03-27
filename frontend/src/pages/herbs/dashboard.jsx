@@ -39,7 +39,6 @@ export default function HerbalDoctorDashboard() {
     name: "",
     indikasi: "",
     kontraindikasi: "",
-    deskripsi: "",
   });
 
   const fetchHerbalData = useCallback(async () => {
@@ -108,7 +107,7 @@ export default function HerbalDoctorDashboard() {
       alert(`Berhasil! Data ${isUpdate ? "Diperbarui" : "Disimpan"}.`);
       
       await fetchHerbalData(); 
-      setForm({ id: null, name: "", indikasi: "", kontraindikasi: "", deskripsi: "" });
+      setForm({ id: null, name: "", indikasi: "", kontraindikasi: "" });
       setActiveTab('katalog'); // Otomatis pindah ke tabel setelah simpan
       
     } catch (error) {
@@ -160,7 +159,6 @@ export default function HerbalDoctorDashboard() {
       name: herb.nama,
       indikasi: herb.indikasi,
       kontraindikasi: herb.kontraindikasi,
-      deskripsi: herb.deskripsi,
     });
     
     // KUNCI: Pindah ke tab input agar form muncul di layar
@@ -189,7 +187,7 @@ export default function HerbalDoctorDashboard() {
               onSave={handleStoreHerbal} 
               isSaving={isSaving}
               onCancel={() => {
-                setForm({ id: null, name: "", indikasi: "", kontraindikasi: "", deskripsi: "" });
+                setForm({ id: null, name: "", indikasi: "", kontraindikasi: "" });
                 setActiveTab('katalog');
               }}
             />

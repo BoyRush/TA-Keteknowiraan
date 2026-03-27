@@ -13,13 +13,14 @@ from blockchain.health_record_service import (
     get_patient_medical_conditions,
     request_access_from_doctor
 )
-from ipfs.ipfs_service import upload_json_to_ipfs, IPFS_PORT
+from ipfs.ipfs_service import upload_json_to_ipfs, get_json_from_ipfs, IPFS_PORT
 from chroma.herbal_store import add_herbal, search_herbal
 from rules.medical_rules import filter_herbs_by_medical_condition
 from services.herbal_builder import build_herbs
 from services.llm_schema_builder import build_llm_input
 from services.llm_generator import generate_herbal_recommendation
 from services.herbal_retriever import retrieve_relevant_herbs
+from services.security_service import encrypt_data, decrypt_data, encrypt_herbal, decrypt_herbal
 from blockchain.contract import web3, contract
 from chroma.herbal_store import embedding_functions
 from flask_cors import CORS
@@ -684,11 +685,19 @@ def upload_ipfs():
 @app.route('/medical/get-content', methods=['GET'])
 def get_medical_content():
     cid = request.args.get('cid')
+    wallet = request.args.get('patient', '')  # Wallet pasien untuk derive key
     import requests
     try:
         response = requests.post(f'http://127.0.0.1:{IPFS_PORT}/api/v0/cat?arg={cid}', timeout=5)
+        raw_json = response.json()
 
-        return response.text, 200, {'Content-Type': 'application/json'}
+        # Dekripsi jika data terenkripsi (legacy plaintext lolos otomatis)
+        try:
+            decrypted = decrypt_data(raw_json, wallet)
+        except Exception:
+            decrypted = raw_json  # Fallback: kembalikan data apa adanya jika dekripsi gagal
+
+        return jsonify(decrypted), 200, {'Content-Type': 'application/json'}
     except Exception as e:
         return jsonify({"diagnosis": "Gagal mengambil data"}), 500
 
@@ -718,73 +727,94 @@ def get_medical_list_api():
         return jsonify({"history": [], "error": "Alamat dokter diperlukan"}), 400
 
     try:
-        import chromadb
-        client = chromadb.PersistentClient(path="./chroma_db") 
-        collection = client.get_or_create_collection(name="medical_records")
+        doc_checksum = web3.to_checksum_address(doctor_login)
 
-        # CONTEK CARA HERBAL: Ambil semua data dari ChromaDB
-        results = collection.get()
-        print(f"🔍 [DEBUG DATABASE] Total IDs di Chroma: {len(results['ids'])}")
-        print(f"🆔 [DEBUG DATABASE] List IDs: {results['ids']}")
-        print(f"📄 [DEBUG DATABASE] Metadatas: {results['metadatas']}")
-        if not results['ids']:
-            return jsonify({"history": []}), 200
+        # 1. Ambil semua pasien yang sudah memberikan akses ke dokter ini
+        import requests as req
+        all_patients = []
+        try:
+            res_patients = req.get("http://127.0.0.1:5000/auth/patients", timeout=5)
+            data_patients = res_patients.json()
+            all_patients = data_patients.get("patients", [])
+        except Exception as e:
+            print(f"⚠️ Gagal ambil daftar pasien: {e}")
+            return jsonify({"history": [], "error": str(e)}), 500
 
-        # Kita kelompokkan data berdasarkan alamat pasien
-        temp_history = {}
+        history = []
 
-        for i in range(len(results['ids'])):
-            meta = results['metadatas'][i]
-            p_addr = meta.get('patient_address', '').lower()
-            
-            # Verifikasi apakah dokter ini punya akses ke pasien tersebut di Blockchain
-            # (Ini opsional untuk kecepatan, tapi bagus untuk keamanan)
+        for patient in all_patients:
             try:
+                p_addr = patient.get("address", "")
                 p_checksum = web3.to_checksum_address(p_addr)
-                doc_checksum = web3.to_checksum_address(doctor_login)
-                
-                # Cek izin akses di Blockchain
+
+                # 2. Cek akses dokter ke pasien ini
                 has_access = contract.functions.checkAccess(p_checksum, doc_checksum).call()
                 if not has_access:
-                    continue # Skip jika dokter tidak punya izin lagi
-            except:
+                    continue
+
+                # 3. Baca SEMUA records dari BLOCKCHAIN (source of truth)
+                bc_records = contract.functions.getMedicalRecords(p_checksum).call({"from": doc_checksum})
+
+                patient_records = []
+
+                for j, bc_rec in enumerate(bc_records):
+                    # bc_rec adalah tuple: (cid, timestamp, createdBy, isActive)
+                    cid = bc_rec[0] if isinstance(bc_rec, (list, tuple)) else getattr(bc_rec, 'cid', '')
+                    ts  = bc_rec[1] if isinstance(bc_rec, (list, tuple)) else getattr(bc_rec, 'timestamp', 0)
+                    is_active = bool(bc_rec[3] if isinstance(bc_rec, (list, tuple)) else getattr(bc_rec, 'isActive', False))
+
+                    print(f"📋 [LIST] Patient={p_addr[:8]}... | idx={j} | CID={cid[:12]}... | isActive={is_active}")
+
+                    # 4. Ambil diagnosa dari IPFS (gunakan helper yang sudah termasuk dekripsi AES)
+                    diagnosis_text = ""
+                    try:
+                        raw_json = get_json_from_ipfs(cid)
+                        if raw_json:
+                            # Dekripsi jika terenkripsi, fallback ke raw jika plaintext
+                            try:
+                                from services.security_service import decrypt_data
+                                decrypted = decrypt_data(raw_json, p_checksum)
+                            except Exception:
+                                decrypted = raw_json
+                            diagnosis_text = decrypted.get("diagnosis", "")
+                        else:
+                            diagnosis_text = ""
+                    except Exception as e:
+                        print(f"⚠️ Gagal ambil IPFS CID={cid}: {e}")
+                        diagnosis_text = ""
+
+                    patient_records.append({
+                        "diagnosis": diagnosis_text,
+                        "timestamp": datetime.fromtimestamp(int(ts)).isoformat() if ts else datetime.now().isoformat(),
+                        "isActive": is_active,  # ← DARI BLOCKCHAIN, SELALU BENAR
+                        "index": j,             # ← INDEX BLOCKCHAIN YANG BENAR
+                        "cid": cid
+                    })
+
+                if patient_records:
+                    patient_name = patient.get("name", "")
+                    if not patient_name:
+                        try:
+                            patient_name = contract.functions.patientNames(p_checksum).call()
+                        except:
+                            patient_name = f"{p_addr[:6]}...{p_addr[-4:]}"
+
+                    history.append({
+                        "address": p_addr.lower(),
+                        "name": patient_name,
+                        "medicalRecords": patient_records
+                    })
+
+            except Exception as e:
+                print(f"⚠️ Error untuk pasien {p_addr}: {e}")
                 continue
 
-            if p_addr not in temp_history:
-                temp_history[p_addr] = []
-
-            temp_history[p_addr].append({
-                "diagnosis": results['documents'][i].replace("Kondisi Medis Pasien: ", ""),
-                "timestamp": meta.get('timestamp', 0),
-                "isActive": True,
-                "index": meta.get('index'),
-                "cid": meta.get('ipfs_cid')
-            })
-
-        # Format ulang agar sesuai dengan state 'patients' di React
-        # Tambahkan nama pasien dari blockchain
-        history = []
-        for addr, recs in temp_history.items():
-            patient_name = "Pasien"
-            try:
-                p_checksum = web3.to_checksum_address(addr)
-                patient_name = contract.functions.patientNames(p_checksum).call()
-                if not patient_name:
-                    patient_name = f"{addr[:6]}...{addr[-4:]}"
-            except:
-                patient_name = f"{addr[:6]}...{addr[-4:]}"
-            
-            history.append({
-                "address": addr, 
-                "name": patient_name,
-                "medicalRecords": recs
-            })
-        
         return jsonify({"history": history}), 200
 
     except Exception as e:
         print(f"Error List Medical: {e}")
-        return jsonify({"history": [], "error": str(e)}), 200
+        return jsonify({"history": [], "error": str(e)}), 500
+
 
 @app.route("/medical/store", methods=["POST", "OPTIONS"])
 def store_medical_api():
@@ -801,13 +831,16 @@ def store_medical_api():
         # Jangan nanya contract.functions lagi di sini!
         blockchain_index = data.get("blockchain_index", 0)
 
-        # 1️⃣ TAHAP IPFS
+        # 1️⃣ TAHAP IPFS — Enkripsi AES-256-GCM sebelum upload
         medical_metadata = {
             "diagnosis": diagnosa,
             "patient": pasien_address,
             "timestamp": datetime.now().isoformat()
         }
-        ipfs_cid = upload_json_to_ipfs(medical_metadata)
+        # Enkripsi dengan kunci unik per-pasien
+        encrypted_payload = encrypt_data(medical_metadata, pasien_address)
+        ipfs_cid = upload_json_to_ipfs(encrypted_payload)
+        print(f"🔐 IPFS encrypted upload: {ipfs_cid}")
         print(f"✅ IPFS Success: {ipfs_cid}")
 
         # 2️⃣ TAHAP CHROMADB (Simpan ke Memori AI)
@@ -839,13 +872,17 @@ def update_medical_record():
         new_diagnosis = data.get("diagnosis")
         record_index = data.get("index") # 👈 Kita butuh index dari FE agar tahu mana yang diedit
 
-        # 1. Upload ke IPFS
-        new_cid = upload_json_to_ipfs({
-            "diagnosis": new_diagnosis, 
+        # 1. Upload ke IPFS — Enkripsi AES-256-GCM sebelum upload
+        raw_payload = {
+            "diagnosis": new_diagnosis,
             "patient": patient_addr,
             "timestamp": datetime.now().isoformat(),
             "status": "updated"
-        })
+        }
+        # Enkripsi dengan kunci unik per-pasien
+        encrypted_update = encrypt_data(raw_payload, patient_addr)
+        new_cid = upload_json_to_ipfs(encrypted_update)
+        print(f"🔐 IPFS encrypted update: {new_cid}")
         
         # 2. Update di ChromaDB (Menimpa ID yang spesifik)
         # ID harus med_alamat_index agar tidak menimpa riwayat penyakit lain
@@ -901,9 +938,13 @@ def delete_medical_by_cid():
         
         if target_id:
             collection.delete(ids=[target_id])
+            print(f"✅ ChromaDB record dihapus: {target_id}")
             return jsonify({"message": "Teks di AI berhasil dihapus"}), 200
         else:
-            return jsonify({"error": "Data tidak ditemukan di AI"}), 404
+            # Blockchain sudah berhasil dinonaktifkan, ChromaDB tidak ditemukan = tidak masalah
+            # (bisa terjadi setelah Edit — ChromaDB punya CID baru, bukan CID lama yang di-nonaktifkan)
+            print(f"⚠️ CID {cid[:12]}... tidak ditemukan di ChromaDB — Blockchain sudah nonaktif, tidak apa-apa.")
+            return jsonify({"message": "Blockchain berhasil dinonaktifkan (ChromaDB tidak terpengaruh)"}), 200
             
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1065,32 +1106,32 @@ def store_herbal_api():
     data = request.json
     doctor_address = data.get("doctor_address")
     nama = data.get("name")
-    # Ambil data baru dari form
     indikasi = data.get("indikasi")
-    kontraindikasi = data.get("kontraindikasi") # Tambahkan ini
-    deskripsi = data.get("deskripsi")
-    
+    kontraindikasi = data.get("kontraindikasi")
+    # deskripsi dihapus dari form UI — gunakan indikasi sebagai fallback content AI
+    deskripsi = data.get("deskripsi") or indikasi
     
     try:
-        # 1. IPFS Upload
+        # 1. IPFS Upload — Enkripsi AES-256-GCM dengan kunci global herbal
         herbal_metadata = {
             "name": nama,
             "indikasi": indikasi,
             "kontraindikasi": kontraindikasi,
-            "deskripsi": deskripsi,
             "doctor_address": doctor_address
         }
-        ipfs_cid = upload_json_to_ipfs(herbal_metadata)
-        print(f"✅ IPFS Success: {ipfs_cid}")
+        encrypted_herbal = encrypt_herbal(herbal_metadata)
+        ipfs_cid = upload_json_to_ipfs(encrypted_herbal)
+        print(f"🔐 IPFS herbal encrypted upload: {ipfs_cid}")
 
-        # 2. ChromaDB (PERBAIKAN DI SINI)
+        # 2. ChromaDB — gunakan indikasi sebagai content embedding jika deskripsi tidak ada
         add_herbal(
             name=nama, 
             indikasi=indikasi, 
-            kontraindikasi=kontraindikasi, # Pastikan ini ada!
+            kontraindikasi=kontraindikasi,
             cid=ipfs_cid,
             content=deskripsi,
-            doctor_address = data.get("doctor_address")
+            doctor_address=doctor_address
+
 
         )
         print("✅ ChromaDB Indexed")

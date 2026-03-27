@@ -2,6 +2,7 @@ import os
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
+from datetime import datetime
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +44,8 @@ def add_medical_to_chroma(record_id, patient_address, diagnosis, ipfs_cid, index
             "patient_address": patient_address.lower(),
             "ipfs_cid": ipfs_cid,
             "index": index,
-            "isActive": True
+            "isActive": True,
+            "timestamp": datetime.now().isoformat()
         }]
     )
     print(f"✅ [ChromaDB] Berhasil simpan riwayat medis: {record_id}")

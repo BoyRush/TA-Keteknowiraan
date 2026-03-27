@@ -49,50 +49,52 @@ const PasienSaya = ({ changeTab }) => {
 
                     if (isApproved) {
     const records = await contract.getMedicalRecords(pChecksum);
-    let allDiagnosisTags = []; // Kita ganti jadi penampung semua diagnosa
+    let allDiagnosisTags = [];
 
-    // --- BAGIAN LOOP RECORDS YANG DIPERBAIKI ---
-if (records && records.length > 0) {
-    for (let rec of records) {
-        // CEK STATUS: Hanya ambil jika diagnosa TIDAK dihapus / MASIH aktif
-        // Ethers.js kadang mengembalikan data sebagai array, jadi cek index ke-3
-        const isActuallyActive = rec.isActive !== undefined ? rec.isActive : rec[3];
-        // Gunakan pengecekan truthy/falsy yang kuat! Ethers terkadang mengirim 'false' atau false atau undefined
-        if (!isActuallyActive || isActuallyActive === "false" || isActuallyActive === 0) {
-            console.log(`🚫 [DEBUG] Skip diagnosa yang sudah Nonaktif:`, rec.cid);
-            continue; 
-        }
+    if (records && records.length > 0) {
+        for (let rec of records) {
+            // Ambil isActive dari named property ATAU index [3]
+            // Struct: {cid[0], timestamp[1], createdBy[2], isActive[3]}
+            const rawIsActive = rec.isActive !== undefined ? rec.isActive : rec[3];
+            
+            // Konversi ke Boolean murni untuk menghindari ambiguitas Ethers.js
+            const isActive = rawIsActive === true || rawIsActive === 1 || rawIsActive === "true";
 
-        try {
-            const resDiag = await fetch(`http://localhost:5000/medical/get-content?cid=${rec.cid}`);
-            if (resDiag.ok) {
-                const diagText = await resDiag.text();
-                let cleanDiag = "";
-                try {
-                    const parsed = JSON.parse(diagText);
-                    cleanDiag = parsed.diagnosis || diagText;
-                } catch {
-                    cleanDiag = diagText;
-                }
-                
-                if (cleanDiag) allDiagnosisTags.push(cleanDiag.trim());
+            console.log(`📋 [DEBUG] Record CID=${rec.cid?.substring(0,12)}... | rawIsActive=${rawIsActive} | type=${typeof rawIsActive} | isActive=${isActive}`);
+
+            if (!isActive) {
+                console.log(`🚫 [DEBUG] Skip record NONAKTIF: CID=${rec.cid?.substring(0,12)}...`);
+                continue;
             }
-        } catch (err) {
-            console.error("Gagal tarik konten IPFS");
+
+            // Record AKTIF: fetch konten dari IPFS (sudah termasuk dekripsi AES)
+            try {
+                const resDiag = await fetch(
+                    `http://127.0.0.1:5000/medical/get-content?cid=${rec.cid}&patient=${pChecksum}`
+                );
+                if (resDiag.ok) {
+                    const diagData = await resDiag.json();
+                    const cleanDiag = diagData.diagnosis || "";
+                    console.log(`✅ [DEBUG] Diagnosa aktif: "${cleanDiag}"`);
+                    if (cleanDiag) allDiagnosisTags.push(cleanDiag.trim());
+                }
+            } catch (err) {
+                console.error("Gagal tarik konten IPFS:", rec.cid);
+            }
         }
     }
-}
 
-    // Jika kosong, baru kasih default
+    // Jika tidak ada diagnosa aktif, tampilkan placeholder
     if (allDiagnosisTags.length === 0) allDiagnosisTags = ["Belum ada diagnosa"];
 
     activeList.push({
         name: patient.name || "Pasien",
         address: pChecksum,
         initials: (patient.name || "P").substring(0, 2).toUpperCase(),
-        tags: allDiagnosisTags // <--- Sekarang isinya semua riwayat penyakit!
+        tags: allDiagnosisTags
     });
 }
+
                 } catch (err) {
                     console.error(`❌ [DEBUG] Error pada pasien ${patient.address}:`, err);
                     continue;

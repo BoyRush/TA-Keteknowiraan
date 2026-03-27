@@ -6,6 +6,14 @@ from blockchain.contract import web3, contract
 from ipfs.ipfs_service import get_json_from_ipfs
 from web3.exceptions import ContractLogicError, BadFunctionCallOutput
 
+# Import AES dekripsi untuk decoding data IPFS
+try:
+    from services.security_service import decrypt_data
+    _ENCRYPTION_ENABLED = True
+except ImportError:
+    _ENCRYPTION_ENABLED = False
+    print("⚠️ security_service tidak ditemukan — dekripsi dinonaktifkan")
+
 
 def store_medical_record(doctor_pk, patient_addr, cid):
     # Ambil alamat dokter dari Private Key
@@ -39,17 +47,28 @@ def get_patient_medical_conditions(patient_address, doctor_address):
 
     conditions = []
     for record in records:
-        if len(record) > 2 and record[2] is False:
+        if len(record) > 2 and record[3] is False:
             continue
 
         cid = record[0]
-        data = get_json_from_ipfs(cid)
+        raw_data = get_json_from_ipfs(cid)
 
-        if data and "diagnosis" in data:
-            diag = data["diagnosis"]
-            conditions.extend([c.strip().lower() for c in diag.split(",") if c.strip()])
+        if raw_data:
+            # Dekripsi data IPFS (legacy plaintext lolos otomatis jika tidak ada field "encrypted")
+            try:
+                if _ENCRYPTION_ENABLED:
+                    data = decrypt_data(raw_data, patient_address)
+                else:
+                    data = raw_data
+            except Exception:
+                data = raw_data  # Fallback: gunakan data mentah jika dekripsi gagal
+
+            if data and "diagnosis" in data:
+                diag = data["diagnosis"]
+                conditions.extend([c.strip().lower() for c in diag.split(",") if c.strip()])
 
     return list(set(conditions))
+
 
 def get_medical_records_as_doctor(patient_address, doctor_address):
     try:

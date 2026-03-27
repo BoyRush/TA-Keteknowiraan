@@ -1,5 +1,5 @@
 import React from 'react';
-import { Leaf, Info, AlertCircle, Save, X } from 'lucide-react';
+import { Leaf, Info, Save, X } from 'lucide-react';
 
 // Terima props dari Dashboard Utama
 const TambahHerbal = ({ form, setForm, onSave, isSaving, onCancel }) => {
@@ -62,23 +62,6 @@ const TambahHerbal = ({ form, setForm, onSave, isSaving, onCancel }) => {
                 required
               />
             </div>
-          </div>
-        </div>
-
-        {/* SECTION 3: DESKRIPSI LENGKAP */}
-        <div className="section-block mt-30">
-          <div className="section-title">
-            <AlertCircle size={18} /> Deskripsi Lengkap
-          </div>
-          <div className="input-group">
-            <label>Penjelasan Detail Tanaman</label>
-            <textarea 
-              className="large-area"
-              placeholder="Tuliskan deskripsi lengkap..."
-              value={form.deskripsi || ""}
-              onChange={(e) => setForm({...form, deskripsi: e.target.value})}
-              required
-            />
           </div>
         </div>
 
