@@ -3,30 +3,31 @@ import subprocess
 import requests
 
 def _detect_ipfs_api_port():
-    """Auto-detect IPFS API port from ipfs config."""
+    """Auto-detect IPFS API port (Daemon/Desktop)."""
+    # 1. Prioritaskan HTTP check untuk IPFS Desktop/Daemon (tanpa butuh CLI ipfs terinstall)
+    for port in [5001, 5002]:
+        try:
+            r = requests.post(f"http://127.0.0.1:{port}/api/v0/id", timeout=1)
+            if r.status_code == 200:
+                print(f"✅ [IPFS] Auto-detected active port via HTTP: {port} (Desktop/Daemon)")
+                return port
+        except Exception:
+            continue
+            
+    # 2. Fallback: Coba periksa config melalui CLI (berfungsi jika API belum aktif atau port beda)
     try:
         result = subprocess.run(
             ["ipfs", "config", "Addresses.API"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=3
         )
         if result.returncode == 0:
             # Format: /ip4/127.0.0.1/tcp/5002
             parts = result.stdout.strip().split("/")
             port = parts[-1]  # Last element is the port
-            print(f"✅ [IPFS] Auto-detected API port: {port}")
+            print(f"✅ [IPFS] Auto-detected API port via Config: {port}")
             return int(port)
     except Exception as e:
-        print(f"⚠️ [IPFS] Gagal auto-detect port: {e}")
-    
-    # Fallback: coba port umum secara berurutan
-    for port in [5001, 5002]:
-        try:
-            r = requests.post(f"http://127.0.0.1:{port}/api/v0/id", timeout=2)
-            if r.status_code == 200:
-                print(f"✅ [IPFS] Fallback: port {port} aktif")
-                return port
-        except Exception:
-            continue
+        print(f"⚠️ [IPFS] CLI fallback gagal: {e}")
     
     print("⚠️ [IPFS] Tidak ada port aktif, menggunakan default 5001")
     return 5001
