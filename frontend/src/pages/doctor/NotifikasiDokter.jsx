@@ -39,10 +39,18 @@ const NotifikasiDokter = ({ address }) => {
   // Fungsi pembantu warna
   const getStatusColor = (pesan) => {
     const p = pesan.toLowerCase();
-    if (p.includes('setuju') || p.includes('approve')) return '#4caf50'; 
-    if (p.includes('tolak') || p.includes('reject')) return '#f44336'; 
-    if (p.includes('cabut') || p.includes('revoke')) return '#ff9800'; 
-    return '#2196f3'; 
+    
+    // Dari Admin
+    if (p.includes('berhasil diverifikasi') || p.includes('selamat bekerja')) return '#2e7d32'; // Hijau tua Admin
+    if (p.includes('dinonaktifkan') || p.includes('registrasi ulang')) return '#c62828'; // Merah tua Admin
+    if (p.includes('ditolak') && p.includes('verifikasi')) return '#e65100'; // Orange Admin
+    
+    // Dari Pasien
+    if (p.includes('disetujui') || p.includes('approve')) return '#4caf50'; // Hijau Pasien
+    if (p.includes('ditolak') || p.includes('reject')) return '#f44336'; // Merah Pasien
+    if (p.includes('dicabut') || p.includes('cabut') || p.includes('revoke')) return '#ff9800'; // Kuning Pasien
+    
+    return '#2196f3'; // Biru Default (Info)
   };
 
   return (

@@ -120,6 +120,13 @@ def get_notifications():
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
+
+        # FIXED TIMEZONE ISSUE: Format waktu ke bentuk YYYY-MM-DDTHH:MM:SS tanpa huruf 'Z'
+        # Agar Frontend membacanya sebagai local time, mencegah +7 jam lompatan zona waktu (WIB)
+        for row in rows:
+            if row.get("tanggal") and isinstance(row["tanggal"], datetime):
+                row["tanggal"] = row["tanggal"].strftime('%Y-%m-%dT%H:%M:%S')
+
         return jsonify(rows)
     except Exception as e:
         return jsonify([])
@@ -496,6 +503,10 @@ def register_api():
         conn.commit()
         cursor.close()
         conn.close()
+
+        # Tambahkan notifikasi verifikasi otomatis untuk PASIEN baru
+        if role == 'patient' and not is_re_registration:
+            add_notification(address.lower(), "✨ Selamat Datang! Akun Pasien Anda telah diverifikasi otomatis oleh sistem. Anda bebas memberikan atau mencabut izin rekam medis ke dokter, serta menggunakan asisten AI peresepan.")
 
         return jsonify({
             "status": "success",
@@ -1478,6 +1489,3 @@ def get_records():
 
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-
