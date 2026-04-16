@@ -107,17 +107,22 @@ const BerandaPasien = ({
             {medicalRecords.length === 0 ? (
               <p className="empty-text">Belum ada rekam medis.</p>
             ) : (
-              recentRecords.map((rec, idx) => (
-                <div className="medical-item" key={idx}>
-                  <div className="medical-info">
-                    <p className="med-title">{rec.diagnosis}</p>
-                    <p className="med-doc">{new Date(rec.timestamp * 1000).toLocaleDateString('id-ID')}</p>
+              recentRecords.map((rec, idx) => {
+                const doctorAddr = rec.doctor || '';
+                const doctorName = approvedDocs.find(d => d.address.toLowerCase() === doctorAddr.toLowerCase())?.name;
+                const displayDoctor = doctorName || (doctorAddr ? `${doctorAddr.substring(0, 6)}...${doctorAddr.substring(doctorAddr.length - 4)}` : 'Dokter');
+                return (
+                  <div className="medical-item" key={idx}>
+                    <div className="medical-info">
+                      <p className="med-title">{rec.diagnosis}</p>
+                      <p className="med-doc">oleh dr. {displayDoctor}</p>
+                    </div>
+                    <div className="record-date">
+                      {new Date(rec.timestamp * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
                   </div>
-                  <div className="medical-tags">
-                    <span className="tag">CID: {rec.cid.substring(0, 10)}...</span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -152,6 +157,7 @@ const BerandaPasien = ({
         .doc-name, .med-title { font-weight: 600; margin: 0; font-size: 14px; }
         .doc-sub, .med-doc { font-size: 11px; color: #999; margin: 2px 0 0 0; }
         .tag { background: #f0f4f8; color: #555; padding: 4px 10px; border-radius: 6px; font-size: 11px; }
+        .record-date { font-size: 13px; color: #999; white-space: nowrap; }
         .empty-text { font-size: 13px; color: #aaa; font-style: italic; text-align: center; width: 100%; padding: 10px 0; }
         .bottom-section { margin-top: 20px; }
         .full-width { width: 100%; }

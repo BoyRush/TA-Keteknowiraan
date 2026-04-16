@@ -327,7 +327,7 @@ def admin_approve_doctor():
         conn.close()
 
         # Catat notifikasi sukses
-        add_notification(doctor_addr, "Akun Anda telah berhasil diverifikasi oleh Admin. Selamat bekerja!")
+        add_notification(doctor_addr, "Akun Anda telah berhasil diverifikasi oleh Admin. Selamat datang Dokter!")
         
         return jsonify({"status": "success", "message": "Dokter berhasil diverifikasi"})
     except Exception as e:
@@ -634,7 +634,7 @@ def get_all_users_admin():
             db_conn.close()
 
             if doc[3]: 
-                role_label = "dokter_herbal" if "herbal" in doc[1].lower() else "Dokter Medis"
+                role_label = "Dokter Herbal" if "herbal" in doc[1].lower() else "Dokter Medis"
                 
                 status = "pending"
                 rejection_reason = None

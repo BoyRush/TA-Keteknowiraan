@@ -262,7 +262,7 @@ const handleSaveMedicalData = async (e) => {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider);
       
-      // 1. AMBIL DAFTAR PASIEN (Bukan daftar dokter)
+      // 1. AMBIL DAFTAR PASIEN
       console.log("📡 [DEBUG] Memanggil API Pasien: http://127.0.0.1:5000/auth/patients");
       const res = await fetch("http://127.0.0.1:5000/auth/patients"); 
       const data = await res.json();

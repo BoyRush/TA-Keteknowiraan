@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Hash, FileText, User } from 'lucide-react'; 
+import { Calendar, FileText, User } from 'lucide-react'; 
 import { useAuth } from '../../../context/AuthContext';
 
 const RiwayatMedis = ({ medicalRecords = [] }) => {
@@ -46,7 +46,7 @@ const RiwayatMedis = ({ medicalRecords = [] }) => {
                   <th><div className="th-content"><Calendar size={14} /> Tanggal & Waktu</div></th>
                   <th><div className="th-content"><FileText size={14} /> Diagnosis</div></th>
                   <th><div className="th-content"><User size={14} /> Diterbitkan Oleh</div></th> 
-                  <th><div className="th-content"><Hash size={14} /> CID</div></th>
+
                 </tr>
               </thead>
               <tbody>
@@ -78,9 +78,7 @@ const RiwayatMedis = ({ medicalRecords = [] }) => {
                           })()}
                         </span>
                       </td>
-                      <td className="td-cid">
-                        <code title={rec.cid}>{rec.cid ? rec.cid.substring(0, 8) : "N/A"}...</code>
-                      </td>
+
                     </tr>
                   ))}
               </tbody>
@@ -97,15 +95,14 @@ const RiwayatMedis = ({ medicalRecords = [] }) => {
         .table-container { width: 100%; overflow-x: auto; }
         .medical-table { width: 100%; border-collapse: collapse; text-align: left; table-layout: fixed; }
         .medical-table th { background: #fafafa; padding: 15px 20px; font-size: 11px; text-transform: uppercase; color: #666; border-bottom: 1px solid #eee; }
-        .medical-table th:nth-child(1) { width: 18%; }
-        .medical-table th:nth-child(2) { width: 40%; }
-        .medical-table th:nth-child(3) { width: 22%; }
-        .medical-table th:nth-child(4) { width: 20%; }
+        .medical-table th:nth-child(1) { width: 20%; }
+        .medical-table th:nth-child(2) { width: 50%; }
+        .medical-table th:nth-child(3) { width: 30%; }
         .th-content { display: flex; align-items: center; gap: 8px; }
         .medical-table td { padding: 18px 20px; border-bottom: 1px solid #f9f9f9; font-size: 13px; color: #444; vertical-align: top; }
         .diagnosis-badge { background: #e8f5e9; color: #2e7d32; padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 12px; display: inline-block; word-wrap: break-word; overflow-wrap: break-word; white-space: normal; max-width: 100%; }
         .doctor-wallet { font-family: sans-serif; color: #1976d2; background: #e3f2fd; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-        .td-cid code { color: #888; font-size: 11px; word-break: break-all; }
+
         .empty-state { padding: 60px; text-align: center; color: #aaa; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>

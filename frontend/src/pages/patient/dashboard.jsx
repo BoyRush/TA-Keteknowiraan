@@ -156,32 +156,19 @@ setMedicalRecords(finalData);
             
             const tx = await contract.revokeAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
             await tx.wait();
-            
-            // 1. Notifikasi ke DOKTER
             await fetch("http://127.0.0.1:5000/notifications/add", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    address: docAddr.toLowerCase(), 
-                    pesan: `Akses Dicabut: Pasien ${userName || address.substring(0, 6) + '...'} telah mencabut izin akses Anda.`
+                    address: docAddr.toLowerCase(), // Target DOKTER
+                    pesan: `Akses Dicabut: Pasien ${userName || "Pasien"} telah mencabut izin akses Anda.`
                 })
             });
-
-            // 2. Notifikasi ke PASIEN sendiri
-            const dName = docName || docAddr.substring(0, 6) + '...';
-            await fetch("http://127.0.0.1:5000/notifications/add", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    address: address.toLowerCase(), 
-                    pesan: `Perizinan oleh Dokter ${dName} berhasil di cabut`
-                })
-            });
-            alert("Izin dokter telah dicabut!");
-            await loadRequests(); // Refresh data
+            alert(`Perizinan oleh Dokter ${docName || docAddr.substring(0, 6) + '...'} berhasil di cabut`);
+            await loadRequests(); 
         } catch (error) { console.error(error); }
         finally { setIsProcessing(false); }
-    };
+    }
 
     const handleOpenNotifications = async () => {
     setActiveTab('notifikasi');
@@ -250,28 +237,15 @@ setMedicalRecords(finalData);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider.getSigner());
       const tx = await contract.rejectAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
       await tx.wait();
-      
-      // 1. Notifikasi ke DOKTER
       await fetch("http://127.0.0.1:5000/notifications/add", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 address: docAddr.toLowerCase(), 
-                pesan: `❌ Akses Ditolak: Perizinan kepada Pasien ${userName || address.substring(0, 6) + '...'} telah di tolak.`
+                pesan: `Perizinan kepada Pasien ${userName || "Pasien"} telah di tolak`
             })
         });
-
-      // 2. Notifikasi ke PASIEN sendiri
-      const dName = docName || docAddr.substring(0, 6) + '...';
-      await fetch("http://127.0.0.1:5000/notifications/add", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                address: address.toLowerCase(), 
-                pesan: `Perizinan oleh Dokter ${dName} berhasil di tolak`
-            })
-        });
-      alert("Permintaan ditolak!");
+      alert(`Perizinan oleh Dokter ${docName || docAddr.substring(0, 6) + '...'} berhasil di tolak`);
       loadRequests();
     } catch (error) { 
       console.error("Gagal menolak akses:", error);

@@ -99,19 +99,17 @@ const Sidebar = ({ activeTab, setActiveTab, dokterCount, notifications = {} }) =
 
       {/* Footer Profile Section */}
       <div className="sidebar-footer">
-        <div className="user-avatar">
-          {/* 1. Inisial Nama (Contoh: Maria jadi 'M') */}
-          {userName ? userName.substring(0, 1).toUpperCase() : '??'}
-        </div>
-        
-        <div className="user-detail">
-          {/* 2. Tampilkan Nama Lengkap di sini */}
-          <span className="user-name">{userName || 'User'}</span>
+        <div className="user-profile-link" onClick={() => setActiveTab('profil')}>
+          <div className="user-avatar">
+            {userName ? userName.substring(0, 1).toUpperCase() : '??'}
+          </div>
           
-          {/* Tampilkan Address kecil di bawahnya (opsional) */}
-          <span className="user-role" style={{ fontSize: '10px', opacity: 0.7 }}>
-              {address ? `${address.substring(0, 6)}...${address.substring(address.length - 4)}` : ''}
-          </span>
+          <div className="user-detail">
+            <span className="user-name">{userName || 'User'}</span>
+            <span className="user-role" style={{ fontSize: '10px', opacity: 0.7 }}>
+                {address ? `${address.substring(0, 6)}...${address.substring(address.length - 4)}` : ''}
+            </span>
+          </div>
         </div>
 
         <button onClick={logout} className="logout-button" title="Keluar">
@@ -217,11 +215,12 @@ const Sidebar = ({ activeTab, setActiveTab, dokterCount, notifications = {} }) =
         }
 
         .sidebar-footer {
-          padding: 20px 20px 0 20px;
+          padding: 20px;
           border-top: 1px solid #f2f2f2;
           display: flex;
           align-items: center;
           gap: 14px;
+          flex-shrink: 0;
         }
 
         .user-avatar {
@@ -237,6 +236,8 @@ const Sidebar = ({ activeTab, setActiveTab, dokterCount, notifications = {} }) =
         }
 
         .user-detail { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+        .user-profile-link { display: flex; align-items: center; gap: 14px; flex: 1; cursor: pointer; overflow: hidden; border-radius: 10px; padding: 4px; margin: -4px; transition: background 0.2s; }
+        .user-profile-link:hover { background: #f5f5f5; }
         .user-name { font-size: 13.5px; font-weight: 600; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .user-role { font-size: 11px; color: #aaa; text-transform: capitalize; margin-top: 2px; }
         
