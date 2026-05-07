@@ -13,6 +13,7 @@ export default function RegisterPage() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [role, setRole] = useState('patient');
     const [specialty, setSpecialty] = useState('');
+    const [referralCode, setReferralCode] = useState('');
     const [loading, setLoading] = useState(false);
     const [adminAddress, setAdminAddress] = useState(null);
 
@@ -88,13 +89,28 @@ export default function RegisterPage() {
             });
 
             if (res.status === 409) {
-                setLoading(false);
-                return setPopup({ title: "Registrasi Gagal", message: "Wallet ini sudah terdaftar di basis data." });
-            }
-            if (res.status !== 200 && res.status !== 201) {
+                // Wallet sudah ada di MySQL (mungkin karena Blockchain di-reset/deploy ulang).
+                // JANGAN berhenti — lanjutkan ke SmartHerbal DB + Blockchain registration.
+                console.log("Info 409: Wallet di MySQL, melanjutkan ke SH + Blockchain registration...");
+            } else if (res.status !== 200 && res.status !== 201) {
                 setLoading(false);
                 return showToast("Gagal mendaftar ke server", "error");
             }
+            
+            // --- Integrasi SmartHerbal ---
+            if (role === 'patient') {
+                try {
+                    await axios.post('http://127.0.0.1:5000/sh/auth/register', {
+                        address: address,
+                        name: name,
+                        password: password,
+                        referral_code: referralCode || null
+                    });
+                } catch (shErr) {
+                    console.error("Gagal daftar di SmartHerbal DB (bisa diabaikan jika sudah ada):", shErr);
+                }
+            }
+            // -----------------------------
 
             try {
                 if (role === 'patient') {
@@ -124,7 +140,13 @@ export default function RegisterPage() {
             } catch (bcError) {
                 console.warn("Blockchain transaction skipped:", bcError.message);
                 const errorMsg = bcError?.data?.message || bcError?.message || "";
-                if (errorMsg.toLowerCase().includes("sudah terdaftar") || errorMsg.toLowerCase().includes("revert")) {
+                if (errorMsg.toLowerCase().includes("sudah terdaftar dan aktif")) {
+                    setPopup({ 
+                        title: "Sudah Terdaftar", 
+                        message: "Akun Anda masih aktif di Blockchain. Silakan langsung Login." 
+                    });
+                    setPendingRedirect('/login');
+                } else if (errorMsg.toLowerCase().includes("sudah terdaftar") || errorMsg.toLowerCase().includes("revert")) {
                     setPopup({ 
                         title: "Registrasi Selesai", 
                         message: "Password tersimpan. Wallet Anda sebelumnya sudah tercatat di Blockchain." 
@@ -228,6 +250,19 @@ export default function RegisterPage() {
                                     style={{ width: '100%', padding: '10px', background: '#fff', borderRadius: '8px', border: `1px solid ${inlineErrors.document ? '#e53e3e' : '#cbd5e0'}` }}
                                 />
                                 {inlineErrors.document && <p style={{ color: '#e53e3e', fontSize: '0.8rem', marginTop: '6px' }}>⚠️ {inlineErrors.document}</p>}
+                            </div>
+                        )}
+                        
+                        {role === 'patient' && (
+                            <div style={{ marginBottom: '20px' }}>
+                                <label style={{ display: 'block', marginBottom: '8px', color: '#4a5568' }}>Kode Referral (Opsional):</label>
+                                <input 
+                                    type="text" 
+                                    value={referralCode}
+                                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e0', outline: 'none' }} 
+                                    onChange={(e) => setReferralCode(e.target.value)} 
+                                    placeholder="Masukkan kode referral jika ada" 
+                                />
                             </div>
                         )}
 

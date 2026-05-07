@@ -1,44 +1,27 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../context/AuthContext';
-import { ethers } from 'ethers';
-import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../api/contract_abi';
 
 export default function LoginPage() {
     const router = useRouter();
-    const { address, isConnected, connectWallet, loginWithPassword } = useAuth();
+    const { address, isConnected, connectWallet, loginWithPassword, loginAsAdmin, ADMIN_ADDRESS } = useAuth();
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
-    const [adminAddress, setAdminAddress] = useState(null);
-    const [isCheckingAdmin, setIsCheckingAdmin] = useState(true)
+    // Admin tidak perlu cek ke blockchain lagi — sudah dideteksi dari ADMIN_ADDRESS konstanta
+    const [isCheckingAdmin] = useState(false);
 
     const [toast, setToast] = useState(null);
     const [popup, setPopup] = useState(null);
     const [inlineError, setInlineError] = useState("");
 
-    const fetchAdminFromChain = async () => {
-        setIsCheckingAdmin(true);
-        if (typeof window !== 'undefined' && window.ethereum) {
-            try {
-                const provider = new ethers.providers.Web3Provider(window.ethereum);
-                const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider);
-                const currentAdmin = await contract.admin();
-                setAdminAddress(currentAdmin.toLowerCase());
-            } catch (error) {
-                console.error("Gagal mengambil data admin dari blockchain", error);
-            } finally {
-                setIsCheckingAdmin(false); 
-            }
-        }else {
-            setIsCheckingAdmin(false);
-        }
-    };
+    const isAdmin = ADMIN_ADDRESS && address?.toLowerCase() === ADMIN_ADDRESS.toLowerCase();
 
+    // Auto-redirect jika sudah connect dan ini admin — tidak perlu klik login manual
     useEffect(() => {
-        fetchAdminFromChain();
-    }, []);
-
-    const isAdmin = address?.toLowerCase() === adminAddress?.toLowerCase();
+        if (isAdmin && address) {
+            loginAsAdmin(address);
+        }
+    }, [isAdmin, address]);
 
     const showToast = (message, type = "success") => {
         setToast({ message, type });
@@ -69,12 +52,14 @@ export default function LoginPage() {
                 showToast(`Selamat Datang ${result.data.role}!!!`, "success");
             } else {
                 const errLower = (result.error || "").toLowerCase();
-                if (errLower.includes("password salah")) {
+                if (result.status === 'revoked' || errLower.includes("dicabut izinnya")) {
+                    setPopup({ title: "Akses Dicabut", message: (result.error || "Akun Dokter Anda telah dicabut izinnya oleh Admin.") + " " + (result.message || "Silakan lakukan registrasi ulang.") });
+                } else if (errLower.includes("password salah")) {
                     setInlineError("Password yang Anda masukkan tidak sesuai.");
                 } else if (errLower.includes("belum terdaftar")) {
                     setPopup({ title: "Akses Ditolak", message: result.error || "Wallet ini belum terdaftar di sistem. Silakan registrasi." });
-                } else if (errLower.includes("registrasi belum lengkap")) {
-                    setPopup({ title: "Registrasi Belum Lengkap", message: result.error + " " + (result.message || "Silakan lakukan registrasi ulang untuk menyelesaikan proses.") });
+                } else if (errLower.includes("registrasi belum lengkap") || errLower.includes("registrasi belum selesai")) {
+                    setPopup({ title: "Registrasi Belum Selesai", message: (result.message || result.error || "Silakan lakukan registrasi ulang untuk menyelesaikan transaksi Blockchain.") + " Klik 'Daftar di sini' di bawah." });
                 } else if (errLower.includes("dinonaktifkan")) {
                     setPopup({ title: "Akun Dinonaktifkan", message: result.error || "Akun Anda telah dinonaktifkan oleh Admin. Silakan hubungi administrator atau lakukan registrasi ulang." });
                 } else {

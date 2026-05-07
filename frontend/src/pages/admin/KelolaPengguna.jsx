@@ -26,8 +26,10 @@ const KelolaPengguna = () => {
     }
   };
 
-  const handleDeactivate = async (userAddress, userName) => {
-    if (!window.confirm(`Nonaktifkan dokter ${userName}?\n\nDokter ini tidak dapat login dan harus melakukan registrasi ulang untuk aktif kembali.`)) return;
+  const handleDeactivate = async (userAddress, userName, userStatus) => {
+    const isRevoked = userStatus === 'verified' || userStatus === 'active' || userStatus === 'revoked';
+    const actionText = isRevoked ? 'Mencabut izin (Revoke)' : 'Menolak pendaftaran (Reject)';
+    if (!window.confirm(`${actionText} dokter ${userName}?\n\nDokter ini tidak dapat login dan harus melakukan registrasi ulang.`)) return;
 
     try {
       const res = await fetch('http://127.0.0.1:5000/admin/deactivate-doctor', {
@@ -38,7 +40,7 @@ const KelolaPengguna = () => {
       const data = await res.json();
 
       if (!res.ok) {
-        alert('❌ Gagal menonaktifkan: ' + (data.error || 'Server error'));
+        alert('Gagal menonaktifkan: ' + (data.error || 'Server error'));
         return;
       }
 
@@ -47,18 +49,27 @@ const KelolaPengguna = () => {
         const provider = new ethers.providers.Web3Provider(window.ethereum);
         const signer = provider.getSigner();
         const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-        const tx = await contract.rejectDoctor(userAddress);
-        await tx.wait();
-        blockchainInfo = ' dan Blockchain';
+        
+        // Gunakan revokeDoctor untuk dokter aktif (isApproved=true)
+        // Gunakan rejectDoctor untuk dokter pending (isApproved=false)
+        if (isRevoked) {
+          const tx = await contract.revokeDoctor(userAddress);
+          await tx.wait();
+          blockchainInfo = ' dan Blockchain (Status: REVOKED)';
+        } else {
+          const tx = await contract.rejectDoctor(userAddress);
+          await tx.wait();
+          blockchainInfo = ' dan Blockchain (Status: REJECTED)';
+        }
       } catch (bcErr) {
-        console.warn('⚠️ Blockchain tidak diperbarui (tidak kritis, database sudah diupdate):', bcErr.message);
-        blockchainInfo = ' (Database berhasil, Blockchain akan diperbarui otomatis saat registrasi ulang)';
+        console.warn('Blockchain tidak diperbarui (tidak kritis):', bcErr.message);
+        blockchainInfo = ' (Database berhasil, Blockchain akan disinkronkan)';
       }
 
-      alert(`✅ Dokter ${userName} berhasil dinonaktifkan di Database${blockchainInfo}.`);
-      fetchUsers(); 
+      alert(`Dokter ${userName} berhasil dinonaktifkan di Database${blockchainInfo}.`);
+      fetchUsers();
     } catch (err) {
-      console.error('❌ Error deactivate:', err);
+      console.error('Error deactivate:', err);
       alert('Gagal memproses: ' + (err.data?.message || err.message));
     }
   };
@@ -100,6 +111,7 @@ const KelolaPengguna = () => {
     if (status === 'active' || status === 'verified') return { label: 'Aktif', bg: '#e8f5e9', color: '#2e7d32', border: '#c8e6c9' };
     if (status === 'pending') return { label: 'Menunggu', bg: '#fffbeb', color: '#b45309', border: '#fde68a' };
     if (status === 'rejected') return { label: 'Ditolak', bg: '#ffebee', color: '#c62828', border: '#ffcdd2' };
+    if (status === 'revoked') return { label: 'Dicabut', bg: '#f3e8ff', color: '#6d28d9', border: '#ddd6fe' };
     return { label: 'Nonaktif', bg: '#ffebee', color: '#c62828', border: '#ffcdd2' };
   };
 
@@ -209,15 +221,15 @@ const KelolaPengguna = () => {
                     </button>
                   )}
 
-                  {/* Tombol Nonaktifkan (Hanya untuk Dokter yang sudah Diverifikasi/Aktif) */}
-                  {user.role !== 'Pasien' && (user.status === 'verified' || user.status === 'active') && (
+                  {/* Tombol Cabut Izin (Revoke) untuk Dokter Aktif, atau Tolak untuk Pending */}
+                  {user.role !== 'Pasien' && (user.status === 'verified' || user.status === 'active' || user.status === 'pending') && (
                     <button
-                      className="btn-deactivate"
-                      onClick={() => handleDeactivate(user.address, user.name)}
-                      title="Nonaktifkan / Hapus dokter ini"
+                      className="btn-revoke-red"
+                      onClick={() => handleDeactivate(user.address, user.name, user.status)}
+                      title={user.status === 'verified' || user.status === 'active' ? 'Cabut Izin (Revoke) dokter ini' : 'Tolak pendaftaran dokter'}
                     >
                       <UserX size={14} />
-                      Nonaktifkan
+                      <span>{user.status === 'verified' || user.status === 'active' ? 'Cabut Izin' : 'Nonaktifkan'}</span>
                     </button>
                   )}
                 </div>
@@ -331,21 +343,32 @@ const KelolaPengguna = () => {
           white-space: nowrap;
         }
 
-        .btn-deactivate {
+        /* Tombol Cabut Izin — diambil dari pola btn-revoke-red di AksesDokter.jsx */
+        .btn-revoke-red {
           display: flex;
           align-items: center;
           gap: 6px;
-          padding: 5px 12px;
           background: #fff5f5;
+          color: #eb4d4b;
           border: 1px solid #ffcccc;
-          border-radius: 8px;
+          padding: 6px 14px;
+          border-radius: 10px;
           font-size: 12px;
           font-weight: 600;
-          color: #c62828;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.3s ease;
+          white-space: nowrap;
         }
-        .btn-deactivate:hover { background: #ffebee; border-color: #ef9a9a; }
+        .btn-revoke-red:hover:not(:disabled) {
+          background: #eb4d4b;
+          color: white;
+          border-color: #eb4d4b;
+          box-shadow: 0 4px 12px rgba(235, 77, 75, 0.2);
+        }
+        .btn-revoke-red:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
 
         .btn-view-doc-small {
           display: flex;

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'next/router';
+import QuotaBadge from './QuotaBadge';
 
 import { 
   Home, 
@@ -50,6 +51,7 @@ const Sidebar = ({ activeTab, setActiveTab, dokterCount, notifications = {} }) =
       { id: 'dashboard', label: 'Beranda', icon: <Home size={20} /> },
       { id: 'verifikasi', label: 'Verifikasi Akun', icon: <UserCheck size={20} />, badgeKey: 'pendingVerifCount' },
       { id: 'pengguna', label: 'Kelola Pengguna', icon: <Users size={20} /> },
+      { id: 'token', label: 'Manajemen Token', icon: <KeyRound size={20} /> },
       { id: 'profil', label: 'Profil Saya', icon: <Settings size={20} /> },
     ],
   };
@@ -95,6 +97,11 @@ const Sidebar = ({ activeTab, setActiveTab, dokterCount, notifications = {} }) =
             </div>
           );
         })}
+        {role === 'patient' && (
+          <div style={{ marginTop: 'auto', padding: '0 15px' }}>
+            <QuotaBadge />
+          </div>
+        )}
       </nav>
 
       {/* Footer Profile Section */}

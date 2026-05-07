@@ -1,5 +1,6 @@
 import React from 'react';
 import { Plus } from 'lucide-react';
+import { useAuth } from '../../../context/AuthContext';
 
 const BerandaPasien = ({ 
   medicalRecords = [], 
@@ -10,12 +11,20 @@ const BerandaPasien = ({
 }) => {
   
   const recentRecords = medicalRecords.slice(0, 2);
+  const { membership } = useAuth();
 
   return (
     <div className="beranda-wrapper">
       <div className="header-content">
         <div>
-          <h2 className="title">Beranda</h2>
+          <h2 className="title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            Beranda
+            {membership?.tier === 'premium' ? (
+                <span style={{ fontSize: '12px', background: '#FEF08A', color: '#854D0E', padding: '4px 10px', borderRadius: '20px', fontWeight: 'bold' }}>Premium</span>
+            ) : (
+                <span style={{ fontSize: '12px', background: '#E5E7EB', color: '#374151', padding: '4px 10px', borderRadius: '20px', fontWeight: 'bold' }}>Basic</span>
+            )}
+          </h2>
           <p className="subtitle">Ringkasan kondisi & rekomendasi terbaru</p>
         </div>
         <button className="btn-minta" onClick={() => changeTab('rekomendasi')}>

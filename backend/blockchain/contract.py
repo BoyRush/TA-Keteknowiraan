@@ -4,12 +4,12 @@ from web3 import Web3
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
 web3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
 
 if not web3.is_connected():
-    raise Exception("❌ Web3 tidak terhubung! Pastikan Ganache sudah jalan.")
+    raise Exception("ERROR: Web3 tidak terhubung! Pastikan Ganache sudah jalan.")
 
 ABI_PATH = os.path.join(BASE_DIR, "build", "contracts", "StorageHealthRecords.json")
 
@@ -18,11 +18,11 @@ try:
         artifact = json.load(f)
         contract_abi = artifact["abi"]
 except FileNotFoundError:
-    raise Exception(f"❌ File ABI tidak ditemukan di {ABI_PATH}. Jalankan 'truffle compile' dulu!")
+    raise Exception(f"ERROR: File ABI tidak ditemukan di {ABI_PATH}. Jalankan 'truffle compile' dulu!")
 
 raw_address = os.getenv("CONTRACT_ADDRESS")
 if not raw_address:
-    raise Exception("❌ CONTRACT_ADDRESS tidak ditemukan di file .env!")
+    raise Exception("ERROR: CONTRACT_ADDRESS tidak ditemukan di file .env!")
 
 CONTRACT_ADDRESS = web3.to_checksum_address(raw_address)
 
@@ -31,4 +31,4 @@ contract = web3.eth.contract(
     abi=contract_abi
 )
 
-print(f"✅ Blockchain terhubung ke: {CONTRACT_ADDRESS}")
+print(f"OK: Blockchain terhubung ke: {CONTRACT_ADDRESS}")

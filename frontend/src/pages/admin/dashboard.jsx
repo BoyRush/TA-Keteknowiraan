@@ -3,6 +3,7 @@ import Sidebar from '../../components/Sidebar';
 import BerandaAdmin from './BerandaAdmin';
 import VerifikasiAkun from './VerifikasiAkun';
 import KelolaPengguna from './KelolaPengguna';
+import ManajemenToken from './ManajemenToken';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/router';
 import { ethers } from 'ethers';
@@ -135,6 +136,9 @@ export default function AdminDashboard() {
         )}
         {activeTab === 'pengguna' && (
           <KelolaPengguna />
+        )}
+        {activeTab === 'token' && (
+          <ManajemenToken />
         )}
         {activeTab === 'profil' && (
           <ProfilSaya />

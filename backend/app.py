@@ -1,6 +1,11 @@
 import os
 import sys
 from datetime import datetime
+
+# Force UTF-8 encoding for Windows console to prevent UnicodeEncodeError on emojis
+if sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from flask import Flask, request, jsonify
 import chromadb
 from flask_cors import CORS 
@@ -219,10 +224,20 @@ def login_api():
         return jsonify({"error": "Gagal verifikasi basis data"}), 500
 
     # B. CEK DOKTER (Medis & Herbal)
+    # doctor_info: [name, specialty, isApproved, isRegistered, isRevoked]
     doctor_info = contract.functions.doctors(address).call()
 
-    if doctor_info[3]:  
-        if doctor_info[2]: 
+    if doctor_info[3]:  # isRegistered
+        # Cek isRevoked (index 4)
+        if doctor_info[4]:  # isRevoked = True
+            return jsonify({
+                "role": "none",
+                "status": "revoked",
+                "error": "Akun Dokter Anda telah dicabut izinnya oleh Admin.",
+                "message": "Silakan lakukan registrasi ulang untuk mengajukan izin kembali kepada Admin."
+            }), 403
+        
+        if doctor_info[2]:  # isApproved = True
             role = "doctor"
             if "herbal" in doctor_info[1].lower():
                 role = "herbal_doctor"
@@ -234,8 +249,12 @@ def login_api():
                 "status": "approved"
             }), 200
         else:
+            # Penting: Kembalikan role sesuai spesialisasi agar frontend bisa routing dengan benar ke pending-verification
+            pending_role = "herbal_doctor" if "herbal" in doctor_info[1].lower() else "doctor"
             return jsonify({
-                "role": "doctor",
+                "role": pending_role,
+                "name": doctor_info[0],
+                "specialty": doctor_info[1],
                 "status": "pending_approval",
                 "message": "Akun Dokter Anda sedang menunggu verifikasi Admin."
             }), 202
@@ -409,12 +428,21 @@ def check_role(address):
     Digunakan oleh checkStatus di AuthContext untuk dokter yang baru di-approve."""
     try:
         checksum_addr = web3.to_checksum_address(address)
+        # doc_info: [name, specialty, isApproved, isRegistered, isRevoked]
         doc_info = contract.functions.doctors(checksum_addr).call()
-        # doc_info: [name, specialty, isApproved, isRegistered]
+        
+        # Cek apakah di-revoke (index 4)
+        if doc_info[4]:  # isRevoked
+            return jsonify({"role": "none", "status": "revoked"}), 403
+        
+        # Tentukan role berdasarkan specialty — selalu berdasarkan specialty, bukan isApproved
+        role = "herbal_doctor" if "herbal" in doc_info[1].lower() else "doctor"
+        
         if doc_info[3] and doc_info[2]:  # isRegistered AND isApproved
-            role = "herbal_doctor" if "herbal" in doc_info[1].lower() else "doctor"
-            return jsonify({"role": role, "name": doc_info[0], "specialty": doc_info[1]}), 200
-        return jsonify({"role": "doctor", "name": doc_info[0]}), 200
+            return jsonify({"role": role, "name": doc_info[0], "specialty": doc_info[1], "status": "approved"}), 200
+        elif doc_info[3]:  # isRegistered tapi belum isApproved (pending)
+            return jsonify({"role": role, "name": doc_info[0], "specialty": doc_info[1], "status": "pending_approval"}), 200
+        return jsonify({"role": "unknown", "status": "not_registered"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -574,9 +602,12 @@ def get_admin_dashboard_stats():
                 continue
 
             # --- CEK APAKAH DIA DOKTER ---
+            # doc: [name, specialty, isApproved, isRegistered, isRevoked]
             doc = contract.functions.doctors(checksum_acc).call()
-            if doc[3]:
-                if doc[2]:
+            if doc[3]:  # isRegistered
+                if doc[4]:  # isRevoked - dokter yang dicabut izinnya, abaikan dari stats aktif
+                    continue
+                if doc[2]:  # isApproved
                     stats["total_pengguna"] += 1
                     if "herbal" in doc[1].lower():
                         stats["dokter_herbal"] += 1
@@ -624,6 +655,7 @@ def get_all_users_admin():
                 })
                 continue
 
+            # doc: [name, specialty, isApproved, isRegistered, isRevoked]
             doc = contract.functions.doctors(checksum_acc).call()
 
             db_conn = get_db_connection()
@@ -633,22 +665,22 @@ def get_all_users_admin():
             db_cursor.close()
             db_conn.close()
 
-            if doc[3]: 
+            if doc[3]:  # isRegistered
                 role_label = "Dokter Herbal" if "herbal" in doc[1].lower() else "Dokter Medis"
                 
-                status = "pending"
+                # Tentukan status berdasarkan flag blockchain
+                if doc[4]:  # isRevoked
+                    status = "revoked"
+                elif doc[2]:  # isApproved
+                    status = "verified"
+                else:  # isRegistered tapi belum approved
+                    status = "pending"
+
                 rejection_reason = None
                 doc_cid = None
                 if db_user:
-                    status = db_user.get('verification_status', 'pending')
                     rejection_reason = db_user.get('rejection_reason')
                     doc_cid = db_user.get('document_cid')
-
-                    if status == 'pending' and doc[2]:
-                        status = 'verified'
-                        
-                elif doc[2]:
-                    status = "active"
 
                 users.append({
                     "name": doc[0] or "Tanpa Nama",
@@ -656,17 +688,19 @@ def get_all_users_admin():
                     "role": role_label,
                     "status": status,
                     "rejection_reason": rejection_reason,
-                    "document_cid": doc_cid
+                    "document_cid": doc_cid,
+                    "is_revoked": doc[4]
                 })
             else:
                 if db_user and db_user.get('verification_status') == 'deactivated':
                     users.append({
                         "name": db_user.get('name', 'Tanpa Nama'),
                         "address": checksum_acc,
-                        "role": "Dokter (Nonaktif)", 
+                        "role": "Dokter (Nonaktif)",
                         "status": "deactivated",
                         "rejection_reason": db_user.get('rejection_reason'),
-                        "document_cid": db_user.get('document_cid')
+                        "document_cid": db_user.get('document_cid'),
+                        "is_revoked": False
                     })
 
         return jsonify({"status": "success", "users": users, "total": len(users)}), 200
@@ -1425,6 +1459,403 @@ def get_records():
     records = get_medical_records_as_doctor(patient, doctor)
     return jsonify(records)
 
+# =========================================
+# SMARTHERBAL (KETEKNOWIRAAN) ENDPOINTS
+# =========================================
+import string
+import secrets
+import hashlib
+from datetime import timedelta
+from smartherbal_config import get_sh_db_connection, FREE_QUOTA_LIMIT, PREMIUM_PRICE
+
+@app.route("/sh/auth/register", methods=["POST", "OPTIONS"])
+def sh_register():
+    if request.method == "OPTIONS": return jsonify({"status": "OK"}), 200
+    data = request.json
+    address = data.get("address", "").lower()
+    name = data.get("name", "")
+    password = data.get("password", "")
+    referred_by = data.get("referred_by", "").upper()
+
+    if not address or not password:
+        return jsonify({"error": "Address dan password wajib diisi"}), 400
+
+    hashed_pw = generate_password_hash(password)
+    
+    # Generate referral code for new user
+    chars = string.ascii_uppercase + string.digits
+    ref_code = "SH-" + ''.join(secrets.choice(chars) for _ in range(6))
+
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("SELECT id FROM sh_users WHERE LOWER(wallet_address) = %s", (address,))
+        if cursor.fetchone():
+            return jsonify({"error": "Akun sudah terdaftar"}), 409
+
+        cursor.execute(
+            "INSERT INTO sh_users (wallet_address, name, password_hash, referral_code, referred_by) VALUES (%s, %s, %s, %s, %s)",
+            (address, name, hashed_pw, ref_code, referred_by if referred_by else None)
+        )
+        conn.commit()
+        
+        # Jika menggunakan kode referral, beri reward ke referrer
+        if referred_by:
+            cursor.execute("SELECT wallet_address FROM sh_users WHERE referral_code = %s", (referred_by,))
+            referrer = cursor.fetchone()
+            if referrer:
+                referrer_addr = referrer["wallet_address"]
+                # Beri 3 hari premium untuk referrer
+                cursor.execute("""
+                    UPDATE sh_users 
+                    SET membership_tier = 'premium', 
+                        premium_until = COALESCE(DATE_ADD(premium_until, INTERVAL 3 DAY), DATE_ADD(NOW(), INTERVAL 3 DAY))
+                    WHERE wallet_address = %s
+                """, (referrer_addr,))
+                
+                cursor.execute(
+                    "INSERT INTO sh_referral_rewards (referrer_address, referred_address, reward_days) VALUES (%s, %s, %s)",
+                    (referrer_addr, address, 3)
+                )
+                conn.commit()
+                # Kasih notif ke referrer
+                cursor.execute("INSERT INTO sh_notifications (address, pesan) VALUES (%s, %s)", 
+                               (referrer_addr, f"🎉 Pengguna baru mendaftar dengan kode Anda! Anda mendapat gratis 3 hari Premium."))
+                conn.commit()
+
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"status": "success", "message": "Pendaftaran berhasil"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/auth/login", methods=["POST", "OPTIONS"])
+def sh_login():
+    if request.method == "OPTIONS": return jsonify({"status": "OK"}), 200
+    data = request.json
+    address = data.get("address", "").lower()
+    password = data.get("password", "")
+
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM sh_users WHERE LOWER(wallet_address) = %s", (address,))
+        user = cursor.fetchone()
+        
+        if not user or not check_password_hash(user["password_hash"], password):
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "Address atau password salah"}), 401
+
+        cursor.execute("UPDATE sh_users SET last_login = NOW() WHERE id = %s", (user["id"],))
+        conn.commit()
+        
+        # Cek jika premium sudah expired
+        tier = user["membership_tier"]
+        premium_until = user["premium_until"]
+        if tier == 'premium' and premium_until and premium_until < datetime.now():
+            cursor.execute("UPDATE sh_users SET membership_tier = 'basic', premium_until = NULL, recommendation_count = 0 WHERE id = %s", (user["id"],))
+            conn.commit()
+            tier = 'basic'
+            premium_until = None
+            user["recommendation_count"] = 0
+            
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "status": "success",
+            "address": address,
+            "name": user["name"],
+            "role": "patient",
+            "tier": tier,
+            "premium_until": premium_until.isoformat() if premium_until else None,
+            "quota_used": user["recommendation_count"],
+            "quota_limit": FREE_QUOTA_LIMIT
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/user/quota-status", methods=["GET"])
+def sh_quota_status():
+    address = request.args.get("address", "").lower()
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT membership_tier, premium_until, recommendation_count, referral_code FROM sh_users WHERE LOWER(wallet_address) = %s", (address,))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+            
+        tier = user["membership_tier"]
+        premium_until = user["premium_until"]
+        
+        if tier == 'premium' and premium_until and premium_until < datetime.now():
+            conn = get_sh_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE sh_users SET membership_tier = 'basic', premium_until = NULL, recommendation_count = 0 WHERE LOWER(wallet_address) = %s", (address,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            tier = 'basic'
+            premium_until = None
+            user["recommendation_count"] = 0
+            
+        return jsonify({
+            "tier": tier,
+            "premium_until": premium_until.isoformat() if premium_until else None,
+            "quota_used": user["recommendation_count"],
+            "quota_limit": FREE_QUOTA_LIMIT,
+            "referral_code": user["referral_code"]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/herbal/recommendation", methods=["GET"])
+def sh_herbal_recommendation():
+    address = request.args.get("address", "").lower()
+    query = request.args.get("q", "").lower() 
+    medical = request.args.get("medical", "")
+    use_rag = request.args.get("use_rag", "true").lower() == "true"
+    
+    if not address or not query:
+        return jsonify({"error": "Address dan keluhan (q) wajib diisi"}), 400
+
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT membership_tier, recommendation_count, premium_until FROM sh_users WHERE LOWER(wallet_address) = %s", (address,))
+        user = cursor.fetchone()
+        
+        if not user:
+            return jsonify({"error": "User tidak ditemukan"}), 404
+            
+        tier = user["membership_tier"]
+        rec_count = user["recommendation_count"]
+        premium_until = user["premium_until"]
+        
+        # Check expired premium first
+        if tier == 'premium' and premium_until and premium_until < datetime.now():
+            tier = 'basic'
+            rec_count = 0
+            cursor.execute("UPDATE sh_users SET membership_tier = 'basic', premium_until = NULL, recommendation_count = 0 WHERE LOWER(wallet_address) = %s", (address,))
+            conn.commit()
+        
+        # QUOTA GATE
+        if tier == 'basic' and rec_count >= FREE_QUOTA_LIMIT:
+            return jsonify({
+                "status": "quota_exceeded",
+                "used": rec_count,
+                "limit": FREE_QUOTA_LIMIT,
+                "message": "Batas rekomendasi gratis tercapai. Silakan upgrade ke Premium untuk akses tak terbatas."
+            }), 403
+
+        # PROSES AI (Menggunakan logika existing)
+        medical_list = [m.strip() for m in medical.split(",") if m.strip()]
+        if use_rag:
+            herbs_from_rag = retrieve_relevant_herbs(query)
+            if not herbs_from_rag:
+                llm_output = {
+                    "mode": "RAG (Database Kosong)",
+                    "rekomendasi": [{
+                        "nama": "Informasi",
+                        "alasan": f"Maaf, tidak ada data herbal di database pakar yang relevan dengan keluhan '{query}'.",
+                        "status": "warning"
+                    }]
+                }
+            else:
+                llm_input = {
+                    "mode": "RAG (Terverifikasi Database)",
+                    "patient_context": {"keluhan": query, "kondisi_medis": medical_list},
+                    "safe_herbs": herbs_from_rag 
+                }
+                llm_output = generate_herbal_recommendation(llm_input)
+                llm_output["mode"] = llm_input["mode"]
+        else:
+            llm_input = {
+                "mode": "Non-RAG (Pengetahuan Umum AI)",
+                "patient_context": {"keluhan": query, "kondisi_medis": medical_list},
+                "safe_herbs": [] 
+            }
+            llm_output = generate_herbal_recommendation(llm_input)
+            llm_output["mode"] = llm_input["mode"]
+
+        # Increment quota & save history di database SH
+        cursor.execute("UPDATE sh_users SET recommendation_count = recommendation_count + 1 WHERE LOWER(wallet_address) = %s", (address,))
+        cursor.execute(
+            "INSERT INTO sh_riwayat_rekomendasi (address, keluhan, hasil_ai, mode) VALUES (%s, %s, %s, %s)",
+            (address, query, json.dumps(llm_output), llm_output["mode"])
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify(llm_output), 200
+
+    except Exception as e:
+        print("Error sh_herbal_recommendation:", e)
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/herbal/history", methods=["GET"])
+def sh_herbal_history():
+    address = request.args.get("address", "").lower()
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM sh_riwayat_rekomendasi WHERE LOWER(address) = %s ORDER BY tanggal DESC", (address,))
+        rows = cursor.fetchall()
+        
+        for row in rows:
+            row['hasil_ai'] = json.loads(row['hasil_ai'])
+            if isinstance(row['tanggal'], datetime):
+                row['tanggal'] = row['tanggal'].isoformat()
+                
+        cursor.close()
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/admin/tokens/generate", methods=["POST"])
+def sh_admin_generate_token():
+    chars = string.ascii_uppercase + string.digits
+    token = "SH-" + ''.join(secrets.choice(chars) for _ in range(8))
+    
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO sh_premium_tokens (token_code) VALUES (%s)",
+            (token,)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"status": "success", "token": token}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/admin/tokens", methods=["GET"])
+def sh_admin_list_tokens():
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM sh_premium_tokens ORDER BY created_at DESC")
+        tokens = cursor.fetchall()
+        for t in tokens:
+            if isinstance(t['created_at'], datetime): t['created_at'] = t['created_at'].isoformat()
+            if t['used_at'] and isinstance(t['used_at'], datetime): t['used_at'] = t['used_at'].isoformat()
+        cursor.close()
+        conn.close()
+        return jsonify({"status": "success", "tokens": tokens}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/admin/tokens/<int:id>", methods=["DELETE"])
+def sh_admin_delete_token(id):
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sh_premium_tokens WHERE id = %s AND status = 'ACTIVE'", (id,))
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Token tidak ditemukan atau sudah digunakan"}), 400
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/membership/activate-token", methods=["POST"])
+def sh_activate_token():
+    data = request.json
+    address = data.get("address", "").lower()
+    token = data.get("token", "").strip().upper()
+    
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check in new table first
+        cursor.execute("SELECT * FROM sh_premium_tokens WHERE token_code = %s", (token,))
+        payment = cursor.fetchone()
+        is_legacy = False
+        
+        if not payment:
+            # Fallback to old table
+            cursor.execute("SELECT * FROM sh_manual_payments WHERE activation_token = %s AND status = 'approved'", (token,))
+            payment = cursor.fetchone()
+            is_legacy = True
+            
+        if not payment:
+            return jsonify({"error": "Token tidak valid"}), 400
+            
+        if (not is_legacy and payment["status"] == "USED") or (is_legacy and payment.get("used")):
+            return jsonify({"error": "Token sudah digunakan"}), 400
+            
+        cursor.execute("SELECT premium_until FROM sh_users WHERE LOWER(wallet_address) = %s", (address,))
+        user = cursor.fetchone()
+        
+        curr_until = user["premium_until"] if user and user["premium_until"] and user["premium_until"] > datetime.now() else datetime.now()
+        new_until = curr_until + timedelta(days=30)
+        
+        cursor.execute("UPDATE sh_users SET membership_tier = 'premium', premium_until = %s WHERE LOWER(wallet_address) = %s", (new_until, address))
+        
+        if is_legacy:
+            cursor.execute("UPDATE sh_manual_payments SET used = TRUE, used_by = %s, used_at = NOW() WHERE id = %s", (address, payment["id"]))
+        else:
+            cursor.execute("UPDATE sh_premium_tokens SET status = 'USED', used_by = %s, used_at = NOW() WHERE id = %s", (address, payment["id"]))
+        
+        cursor.execute("INSERT INTO sh_notifications (address, pesan) VALUES (%s, %s)", 
+                       (address, f"✨ Premium aktif hingga {new_until.strftime('%d %B %Y')}! Nikmati akses tak terbatas."))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"status": "success", "premium_until": new_until.isoformat()}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/notifications", methods=["GET"])
+def sh_notifications():
+    address = request.args.get("address", "").lower()
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM sh_notifications WHERE LOWER(address) = %s ORDER BY tanggal DESC", (address,))
+        rows = cursor.fetchall()
+        for row in rows:
+            if isinstance(row['tanggal'], datetime):
+                row['tanggal'] = row['tanggal'].isoformat()
+        cursor.close()
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/sh/notifications/mark-read", methods=["POST"])
+def sh_notif_mark_read():
+    address = request.json.get("address", "").lower()
+    try:
+        conn = get_sh_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE sh_notifications SET is_read = TRUE WHERE LOWER(address) = %s", (address,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# =========================================
+# END SMARTHERBAL ENDPOINTS
+# =========================================
 
 if __name__ == "__main__":
     app.run(debug=True)

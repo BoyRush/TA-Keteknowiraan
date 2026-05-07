@@ -35,6 +35,7 @@ contract StorageHealthRecords {
         string specialty;
         bool isApproved;
         bool isRegistered;
+        bool isRevoked;
     }
 
     // =====================
@@ -59,10 +60,14 @@ contract StorageHealthRecords {
     // =====================
 
     // Registrasi Dokter
+    // Dokter baru OR dokter yang sebelumnya di-revoke (isRevoked=true) bisa daftar ulang
     function registerDoctor(string memory _name, string memory _specialty) public {
-        require(!doctors[msg.sender].isRegistered, "Sudah terdaftar");
+        bool isNewDoctor = !doctors[msg.sender].isRegistered;
+        bool isRevokedDoctor = doctors[msg.sender].isRegistered && doctors[msg.sender].isRevoked;
+        require(isNewDoctor || isRevokedDoctor, "Sudah terdaftar dan aktif, tidak bisa daftar ulang");
         
-        doctors[msg.sender] = DoctorProfile(_name, _specialty, false, true);
+        // Reset semua state ke kondisi pending awal
+        doctors[msg.sender] = DoctorProfile(_name, _specialty, false, true, false);
         
         if (!hasRegistered[msg.sender]) {
             allUserAddresses.push(msg.sender);
@@ -86,15 +91,25 @@ contract StorageHealthRecords {
     function approveDoctor(address _doctor) public onlyAdmin {
         require(doctors[_doctor].isRegistered, "Dokter belum mendaftar");
         doctors[_doctor].isApproved = true;
+        doctors[_doctor].isRevoked = false;
         verifiedDoctor[_doctor] = true; 
     }
 
-    // Fungsi Reject Dokter (PENTING untuk selaras dengan tombol hapus admin)
+    // Fungsi Reject Dokter: Hanya untuk dokter yang BELUM disetujui (status pending)
+    // Menghapus seluruh profil dokter agar bisa mendaftar dari awal
     function rejectDoctor(address _doctor) public onlyAdmin {
         require(doctors[_doctor].isRegistered, "Dokter tidak terdaftar");
-        require(!doctors[_doctor].isApproved, "Tidak bisa hapus dokter yang sudah disetujui");
+        require(!doctors[_doctor].isApproved, "Dokter sudah disetujui. Gunakan revokeDoctor");
         
         delete doctors[_doctor];
+        verifiedDoctor[_doctor] = false;
+    }
+
+    // Fungsi Revoke Dokter
+    function revokeDoctor(address _doctor) public onlyAdmin {
+        require(doctors[_doctor].isApproved, "Dokter belum disetujui");
+        doctors[_doctor].isApproved = false;
+        doctors[_doctor].isRevoked = true;
         verifiedDoctor[_doctor] = false;
     }
 

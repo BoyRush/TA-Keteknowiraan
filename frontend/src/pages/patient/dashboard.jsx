@@ -13,7 +13,7 @@ import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../../api/contract_abi';
 import { ethers } from 'ethers';
 
 export default function PatientDashboard() {
-  const { address, role, status, loading, isAuthenticated, userName } = useAuth();
+  const { address, role, status, loading, isAuthenticated, userName, refreshMembership } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('beranda');
   const [medicalRecords, setMedicalRecords] = useState([]);
@@ -193,12 +193,24 @@ setMedicalRecords(finalData);
         const kondisiMedis = medicalRecords.map(r => r.diagnosis).join(', ');
 
         const response = await fetch(
-            `http://localhost:5000/herbal/recommendation-input?q=${keluhan}&medical=${kondisiMedis}&use_rag=${useRag}&address=${address}`
+            `http://localhost:5000/sh/herbal/recommendation?q=${keluhan}&medical=${kondisiMedis}&use_rag=${useRag}&address=${address}`
         );
         const data = await response.json();
         
+        if (response.status === 403 && data.status === 'quota_exceeded') {
+            alert(data.message);
+            // Router can be used if we imported it, or let MintaRekomendasi handle UI.
+            // But here we just set isRecommending false.
+            setIsRecommending(false);
+            return;
+        }
+        
         setRekomendasi(data);
         
+        // Refresh membership to update QuotaBadge
+        if (refreshMembership) {
+            refreshMembership(address);
+        }
         loadRekomendasiCount(); 
         
     } catch (error) {

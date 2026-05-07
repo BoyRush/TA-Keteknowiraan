@@ -1,5 +1,8 @@
 import React from 'react';
-import { Database, Cpu, MessageSquare } from 'lucide-react';
+import { Database, Cpu, MessageSquare, Lock } from 'lucide-react';
+import QuotaBadge from '../../../components/QuotaBadge';
+import UpgradeBanner from '../../../components/UpgradeBanner';
+import { useAuth } from '../../../context/AuthContext';
 
 const MintaRekomendasi = ({ 
   keluhan, 
@@ -10,8 +13,13 @@ const MintaRekomendasi = ({
   isRecommending, 
   rekomendasi 
 }) => {
+  const { membership } = useAuth();
+  const isPremium = membership?.tier === 'premium';
+
   return (
     <div className="menu-container">
+      <UpgradeBanner />
+      <QuotaBadge />
       <div className="header-page">
         <h2 className="title">Minta Rekomendasi Herbal</h2>
         <p className="subtitle">Konsultasikan keluhan Anda dengan sistem pakar AI kami</p>
@@ -63,7 +71,20 @@ const MintaRekomendasi = ({
                       {item.status === 'success' ? 'Direkomendasikan' : 'Peringatan'}
                     </span>
                   </div>
-                  <p className="herb-reason">{item.alasan}</p>
+                  
+                  <div style={{ position: 'relative' }}>
+                      <p className={`herb-reason ${!isPremium ? 'blurred' : ''}`}>
+                        {item.alasan}
+                      </p>
+                      
+                      {!isPremium && (
+                          <div className="lock-overlay">
+                              <Lock size={20} color="#B45309" style={{ marginBottom: '8px' }} />
+                              <div style={{ fontSize: '13px', fontWeight: 600, color: '#B45309' }}>Konten Premium Terkunci</div>
+                              <div style={{ fontSize: '11px', color: '#92400E', marginTop: '4px' }}>Upgrade untuk melihat dosis & detail</div>
+                          </div>
+                      )}
+                  </div>
                 </div>
               ))
             ) : (
@@ -106,6 +127,9 @@ const MintaRekomendasi = ({
         .status-badge.success { background: #e8f5e9; color: #2e7d32; }
         .status-badge.danger { background: #fdecea; color: #d32f2f; }
         .herb-reason { font-size: 14px; color: #555; line-height: 1.6; text-align: justify; }
+        
+        .blurred { filter: blur(5px); user-select: none; opacity: 0.7; }
+        .lock-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(255, 251, 235, 0.85); backdrop-filter: blur(1px); border-radius: 8px; border: 1px dashed #FCD34D; }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>

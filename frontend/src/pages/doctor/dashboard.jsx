@@ -38,6 +38,11 @@
           router.replace('/pending-verification');
           return;
         }
+        // Dokter Herbal TIDAK boleh akses halaman ini — arahkan ke dashboard mereka
+        if (role === 'herbal_doctor') {
+          router.replace('/herbs/dashboard');
+          return;
+        }
         if (role !== 'doctor') {
           router.replace('/login');
           return;
@@ -256,7 +261,9 @@ const handleSaveMedicalData = async (e) => {
     const loadPatientStatus = useCallback(async () => {
     console.log("🔍 [DEBUG] loadPatientStatus dijalankan...");
 
-    if (!window.ethereum || !address || role !== 'doctor') return;
+    if (!window.ethereum || !address || role !== 'doctor') {
+      return;
+    }
 
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum);

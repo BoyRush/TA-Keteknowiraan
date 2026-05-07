@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, BookOpen, MessageCircle } from 'lucide-react';
+import { Clock, BookOpen, MessageCircle, Lock } from 'lucide-react';
+import { useAuth } from '../../../context/AuthContext';
 
 const RiwayatRekomendasi = ({ address }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { membership } = useAuth();
+  const isPremium = membership?.tier === 'premium';
 
 useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/herbal/history?address=${address}`);
+        const res = await fetch(`http://localhost:5000/sh/herbal/history?address=${address}`);
         const data = await res.json();
         
         if (Array.isArray(data)) {
@@ -65,9 +68,16 @@ useEffect(() => {
               {/* SESUAIKAN: item.hasil_ai.rekomendasi */}
               {item.hasil_ai && item.hasil_ai.rekomendasi ? (
                 item.hasil_ai.rekomendasi.map((rek, i) => (
-                  <div key={i} className="recommendation-box">
+                  <div key={i} className="recommendation-box" style={{ position: 'relative', overflow: 'hidden' }}>
                     <p className="herbal-name">🌿 {rek.nama}</p>
-                    <p className="rec-text">{rek.alasan}</p>
+                    <p className={`rec-text ${!isPremium ? 'blurred' : ''}`}>{rek.alasan}</p>
+                    
+                    {!isPremium && (
+                        <div className="lock-overlay">
+                            <Lock size={16} color="#B45309" style={{ marginBottom: '4px' }} />
+                            <div style={{ fontSize: '11px', fontWeight: 600, color: '#B45309' }}>Konten Premium Terkunci</div>
+                        </div>
+                    )}
                   </div>
                 ))
               ) : (
@@ -144,6 +154,9 @@ useEffect(() => {
           border-radius: 12px; 
           border-left: 4px solid #2e7d32; 
         }
+
+        .blurred { filter: blur(4px); user-select: none; opacity: 0.7; }
+        .lock-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(255, 251, 235, 0.85); backdrop-filter: blur(1px); border-radius: 8px; border: 1px dashed #FCD34D; }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
