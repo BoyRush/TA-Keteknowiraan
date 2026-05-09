@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { Web3ModalProvider } from "../api/web3_config";
 import { AuthProvider } from "../context/AuthContext";
 import { useAuth } from "../context/AuthContext";
 
@@ -73,13 +72,11 @@ function MyApp({ Component, pageProps }) {
   if (!mounted) return null;
 
   return (
-    <Web3ModalProvider>
-      <AuthProvider>
-        <RouteGuard>
-          <Component {...pageProps} />
-        </RouteGuard>
-      </AuthProvider>
-    </Web3ModalProvider>
+    <AuthProvider>
+      <RouteGuard>
+        <Component {...pageProps} />
+      </RouteGuard>
+    </AuthProvider>
   );
 }
 

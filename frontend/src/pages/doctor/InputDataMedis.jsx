@@ -10,6 +10,11 @@ const InputDataMedis = ({
   txLoading, 
   isEditMode 
 }) => {
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setMedicalData(prev => ({ ...prev, [name]: value }));
+  };
+
   return (
     <div className="menu-wrapper">
       <div className="header-section">
@@ -33,9 +38,9 @@ const InputDataMedis = ({
               required
             >
               <option value="">-- Pilih Pasien Terdaftar --</option>
-              {approvedPatients.map((p, idx) => (
-                <option key={idx} value={p.address}>
-                  {p.name} ({p.address.substring(0, 10)}...)
+              {approvedPatients.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
                 </option>
               ))}
             </select>
@@ -45,15 +50,17 @@ const InputDataMedis = ({
             <label>Diagnosa</label>
             <p className="hint">Tuliskan diagnosa pasien secara mendetail:</p>
             <textarea 
-              value={medicalData}
-              onChange={(e) => setMedicalData(e.target.value)}
+              name="diagnosis"
+              value={medicalData.diagnosis}
+              onChange={handleChange}
               className="form-textarea"
               required
+              placeholder="Contoh: Pasien mengalami gejala flu disertai batuk berdahak selama 3 hari..."
             />
           </div>
 
           <button type="submit" disabled={txLoading} className={`btn-submit ${isEditMode ? 'edit' : ''}`}>
-            {txLoading ? "Memproses Transaksi..." : (isEditMode ? "Perbarui Data" : "Simpan ke Smart Contract")}
+            {txLoading ? "Menyimpan Data..." : (isEditMode ? "Perbarui Data" : "Simpan Rekam Medis")}
           </button>
         </form>
       </div>
@@ -66,19 +73,20 @@ const InputDataMedis = ({
           color: #1976d2; font-size: 14px; align-items: center;
         }
         .card-white { background: white; border-radius: 20px; padding: 30px; border: 1px solid #f0f0f0; }
-        .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; font-weight: 600; margin-bottom: 8px; color: #333; }
-        .hint { font-size: 12px; color: #777; margin-bottom: 8px; }
+        .form-group { margin-bottom: 25px; }
+        .form-group label { display: block; font-weight: 700; margin-bottom: 8px; color: #333; font-size: 15px; }
+        .hint { font-size: 13px; color: #777; margin-bottom: 10px; }
         .form-input, .form-textarea { 
-          width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 10px;
-          font-family: inherit; font-size: 14px;
+          width: 100%; padding: 14px; border: 1px solid #ddd; border-radius: 12px;
+          font-family: inherit; font-size: 14px; background: #fff;
         }
-        .form-textarea { height: 150px; resize: vertical; }
+        .form-textarea { height: 180px; resize: vertical; }
         .btn-submit { 
-          width: 100%; padding: 14px; border: none; border-radius: 10px;
-          background: #2e7d32; color: white; font-weight: 600; cursor: pointer;
-          transition: 0.3s;
+          width: 100%; padding: 16px; border: none; border-radius: 12px;
+          background: #2e7d32; color: white; font-weight: 700; cursor: pointer;
+          transition: 0.3s; font-size: 15px;
         }
+        .btn-submit:hover { background: #1b5e20; }
         .btn-submit:disabled { background: #ccc; cursor: not-allowed; }
         .btn-submit.edit { background: #ffa000; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; } }

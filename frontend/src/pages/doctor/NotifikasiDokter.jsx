@@ -1,39 +1,27 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
-const NotifikasiDokter = ({ address }) => {
+const NotifikasiDokter = () => {
   const [notifs, setNotifs] = useState([]);
 
   useEffect(() => {
     const fetchNotifs = async () => {
-      console.log("📡 [DEBUG] Memulai fetch notifikasi untuk:", address);
       try {
-        const res = await fetch(`http://127.0.0.1:5000/notifications?address=${address}`);
+        const token = localStorage.getItem('herbalchain_token');
+        const res = await axios.get(`http://127.0.0.1:5000/notifications`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
         
-        if (!res.ok) {
-          console.error("❌ [DEBUG] Response API Error:", res.status);
-          return;
-        }
-
-        const data = await res.json();
-        console.log("📥 [DEBUG] Data diterima dari Flask:", data);
-
-        if (data.length === 0) {
-          console.warn("⚠️ [DEBUG] Data kosong. Cek apakah di database MySQL ada notif untuk address ini.");
-        }
-
+        const data = res.data;
         const sortedData = data.sort((a, b) => b.id - a.id);
         setNotifs(sortedData);
       } catch (e) { 
-        console.error("🔥 [DEBUG] Gagal total fetch notif:", e); 
+        console.error("Gagal fetch notif:", e); 
       }
     };
 
-    if (address) {
-      fetchNotifs();
-    } else {
-      console.warn("🚫 [DEBUG] Address belum ada/undefined, fetch dibatalkan.");
-    }
-  }, [address]);
+    fetchNotifs();
+  }, []);
 
   const getStatusColor = (pesan) => {
     const p = pesan.toLowerCase();

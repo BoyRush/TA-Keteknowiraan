@@ -1,9 +1,9 @@
 import React from 'react';
-import { User, Wallet, Shield, Calendar } from 'lucide-react';
+import { User, Mail, Shield, Calendar } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const ProfilSaya = () => {
-  const { address, role, userName } = useAuth();
+  const { id, username, fullName, role, email } = useAuth();
 
   const getRoleLabel = (r) => {
     switch (r) {
@@ -26,10 +26,10 @@ const ProfilSaya = () => {
         {/* Avatar */}
         <div className="avatar-section">
           <div className="avatar-circle">
-            {userName ? userName.substring(0, 1).toUpperCase() : '?'}
+            {fullName ? fullName.substring(0, 1).toUpperCase() : (username ? username.substring(0, 1).toUpperCase() : '?')}
           </div>
           <div className="avatar-info">
-            <h3 className="avatar-name">{userName || 'Nama Belum Diatur'}</h3>
+            <h3 className="avatar-name">{fullName || username || 'Nama Belum Diatur'}</h3>
             <span className="role-badge">{getRoleLabel(role)}</span>
           </div>
         </div>
@@ -42,7 +42,23 @@ const ProfilSaya = () => {
             <div className="info-icon"><User size={18} /></div>
             <div className="info-content">
               <span className="info-label">Nama Lengkap</span>
-              <span className="info-value">{userName || '-'}</span>
+              <span className="info-value">{fullName || '-'}</span>
+            </div>
+          </div>
+
+          <div className="info-item">
+            <div className="info-icon"><Shield size={18} /></div>
+            <div className="info-content">
+              <span className="info-label">Username</span>
+              <span className="info-value">{username || '-'}</span>
+            </div>
+          </div>
+
+          <div className="info-item">
+            <div className="info-icon"><Calendar size={18} /></div>
+            <div className="info-content">
+              <span className="info-label">Email</span>
+              <span className="info-value">{email || '-'}</span>
             </div>
           </div>
 
@@ -51,14 +67,6 @@ const ProfilSaya = () => {
             <div className="info-content">
               <span className="info-label">Role / Peran</span>
               <span className="info-value">{getRoleLabel(role)}</span>
-            </div>
-          </div>
-
-          <div className="info-item">
-            <div className="info-icon"><Wallet size={18} /></div>
-            <div className="info-content">
-              <span className="info-label">Wallet Address</span>
-              <span className="info-value mono">{address || '-'}</span>
             </div>
           </div>
         </div>

@@ -12,7 +12,6 @@ embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
     model_name="intfloat/multilingual-e5-large"
 )
 
-
 chroma_client = chromadb.PersistentClient(
     path=CHROMA_DIR
 )
@@ -23,74 +22,146 @@ collection = chroma_client.get_or_create_collection(
 )
 
 
-def add_medical_to_chroma(record_id, patient_address, diagnosis, ipfs_cid, index):
-    # 1. Hapus dulu koleksi lama yang bermasalah (HANYA JALANKAN SEKALI/SAAT ERROR)
-    # try:
-    #     chroma_client.delete_collection(name="medical_records")
-    #     print("🧹 [ChromaDB] Koleksi lama dihapus untuk reset embedding.")
-    # except:
-    #     print("ℹ️ [ChromaDB] Koleksi belum ada, lanjut membuat baru.")
+# ========================================================
+# HERBAL CRUD (Web2 - MySQL ID-based, No IPFS/Blockchain)
+# ========================================================
 
-    # 2. Buat ulang koleksi dengan konfigurasi yang benar
-    medical_coll = chroma_client.get_or_create_collection(
-        name="medical_records",
-        embedding_function=embedding_function
-    )
+def add_herbal(record_id: int, name: str, indikasi: str, kontraindikasi: str, content: str, doctor_id: int) -> str:
+    """
+    Menyimpan data herbal sebagai embedding vector ke ChromaDB.
+    Menggunakan MySQL record_id sebagai anchor key (bukan IPFS CID atau wallet address).
     
-    medical_coll.add(
-        ids=[record_id],
-        documents=[f"Kondisi Medis Pasien: {diagnosis}"],
-        metadatas=[{
-            "patient_address": patient_address.lower(),
-            "ipfs_cid": ipfs_cid,
-            "index": index,
-            "isActive": True,
-            "timestamp": datetime.now().isoformat()
-        }]
-    )
-    print(f"✅ [ChromaDB] Berhasil simpan riwayat medis: {record_id}")
-    
-def add_herbal(name, indikasi, kontraindikasi, cid, content, doctor_address):
-    doc_id = f"herb_{name.lower().replace(' ', '_')}_{doctor_address.lower()[:6]}"
+    Returns: chroma_doc_id yang disimpan kembali ke MySQL (herbal_catalogs.chroma_doc_id)
+    """
+    doc_id = f"herb_{record_id}"
+
     full_text_for_embedding = (
         f"Herbal: {name}. "
         f"Kegunaan dan Indikasi: {indikasi}. "
         f"Peringatan/Kontraindikasi: {kontraindikasi}. "
-        f"Penjelasan: {content}"
+        f"Penjelasan: {content or ''}"
     )
-    # --- TAMBAHKAN PRINT INI UNTUK DEBUGGING ---
+
     print("\n" + "="*50)
-    print("📤 MENGIRIM KE CHROMADB (FORMAT TXT):")
-    print(full_text_for_embedding)
+    print(f"📤 MENAMBAH KE CHROMADB: {doc_id}")
+    print(full_text_for_embedding[:200])
     print("="*50 + "\n")
-    # -------------------------------------------
-    
+
+    # Jika doc_id sudah ada (update scenario), hapus dulu
+    try:
+        existing = collection.get(ids=[doc_id])
+        if existing and existing.get("ids"):
+            collection.delete(ids=[doc_id])
+    except Exception:
+        pass
+
     collection.add(
         ids=[doc_id],
-        documents=[full_text_for_embedding], 
-        metadatas=[{                         
+        documents=[full_text_for_embedding],
+        metadatas=[{
+            "record_id": record_id,
             "nama": name,
             "indikasi": indikasi,
             "kontraindikasi": kontraindikasi,
-            "ipfs_cid": cid,
-            "deskripsi": content,
-            "doctor_address": doctor_address.lower()
+            "deskripsi": content or "",
+            "doctor_id": doctor_id,
+            "is_active": True,
+            "timestamp": datetime.now().isoformat()
         }]
     )
-def search_herbal(query, n_results=3):
-    query_embeddings = embedding_function([query])
+
+    print(f"✅ [ChromaDB] Herbal '{name}' (ID: {doc_id}) berhasil disimpan.")
+    return doc_id
+
+
+def update_herbal(record_id: int, name: str, indikasi: str, kontraindikasi: str, content: str, doctor_id: int) -> str:
+    """
+    Memperbarui embedding herbal di ChromaDB.
+    Menghapus vektor lama dan menambahkan yang baru dengan data terbaru.
     
+    Returns: chroma_doc_id yang sama (herb_{record_id})
+    """
+    doc_id = f"herb_{record_id}"
+
+    full_text_for_embedding = (
+        f"Herbal: {name}. "
+        f"Kegunaan dan Indikasi: {indikasi}. "
+        f"Peringatan/Kontraindikasi: {kontraindikasi}. "
+        f"Penjelasan: {content or ''}"
+    )
+
     print("\n" + "="*50)
-    print(f"KELUHAN PASIEN: '{query}'")
-    print(f"ANGKA EMBEDDING (Hanya 10 angka pertama dari 384):")
-    print(query_embeddings[0][:10]) 
-    print(f"... (total ada {len(query_embeddings[0])} angka dalam vektor ini)")
+    print(f"♻️ MEMPERBARUI CHROMADB: {doc_id}")
+    print(full_text_for_embedding[:200])
+    print("="*50 + "\n")
+
+    # Hapus dokumen lama
+    try:
+        collection.delete(ids=[doc_id])
+    except Exception as e:
+        print(f"⚠️ Tidak ditemukan dokumen lama untuk dihapus: {e}")
+
+    # Tambahkan versi baru
+    collection.add(
+        ids=[doc_id],
+        documents=[full_text_for_embedding],
+        metadatas=[{
+            "record_id": record_id,
+            "nama": name,
+            "indikasi": indikasi,
+            "kontraindikasi": kontraindikasi,
+            "deskripsi": content or "",
+            "doctor_id": doctor_id,
+            "is_active": True,
+            "timestamp": datetime.now().isoformat()
+        }]
+    )
+
+    print(f"✅ [ChromaDB] Herbal '{name}' (ID: {doc_id}) berhasil diperbarui.")
+    return doc_id
+
+
+def delete_herbal(record_id: int):
+    """
+    Menghapus embedding herbal dari ChromaDB.
+    Dipanggil saat Dokter Herbal melakukan soft-delete (is_active=FALSE di MySQL).
+    Ini memastikan AI tidak lagi merekomendasikan herbal yang sudah dinonaktifkan.
+    """
+    doc_id = f"herb_{record_id}"
+    try:
+        collection.delete(ids=[doc_id])
+        print(f"🗑️ [ChromaDB] Herbal (ID: {doc_id}) berhasil dihapus dari vektor.")
+    except Exception as e:
+        print(f"⚠️ [ChromaDB] Gagal menghapus {doc_id}: {e}")
+
+
+def search_herbal(query: str, n_results: int = 3) -> dict:
+    """
+    Mencari herbal yang relevan dengan keluhan pasien menggunakan Semantic Search.
+    Otomatis menangani kasus koleksi kosong.
+    """
+    count = collection.count()
+    if count == 0:
+        return {
+            "documents": [[]],
+            "metadatas": [[]],
+            "ids": [[]],
+            "distances": [[]]
+        }
+
+    actual_n = min(n_results, count)
+
+    print("\n" + "="*50)
+    print(f"🔍 SEMANTIC SEARCH: '{query}'")
+    print(f"Koleksi ChromaDB memiliki {count} dokumen herbal.")
     print("="*50 + "\n")
 
     return collection.query(
         query_texts=[query],
-        n_results=n_results,
+        n_results=actual_n,
     )
-def count_herbal():
-    return collection.count()
 
+
+def count_herbal() -> int:
+    """Mengembalikan jumlah herbal aktif di ChromaDB."""
+    return collection.count()

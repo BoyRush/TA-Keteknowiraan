@@ -1,18 +1,28 @@
 import React, { useState, useEffect } from 'react';
 
-const NotifikasiPasien = ({ address }) => {
+const NotifikasiPasien = () => {
   const [notifs, setNotifs] = useState([]);
 
   useEffect(() => {
     const fetchNotifs = async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:5000/notifications?address=${address}`);
+        const token = localStorage.getItem('herbalchain_token');
+        const res = await fetch(`http://127.0.0.1:5000/notifications`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
         const data = await res.json();
-        setNotifs(data);
-      } catch (e) { console.error(e); }
+        if (data && Array.isArray(data)) {
+          setNotifs(data);
+        } else {
+          setNotifs([]);
+        }
+      } catch (e) { 
+        console.error(e);
+        setNotifs([]);
+      }
     };
     fetchNotifs();
-  }, [address]);
+  }, []);
 
   return (
     <div className="menu-wrapper">

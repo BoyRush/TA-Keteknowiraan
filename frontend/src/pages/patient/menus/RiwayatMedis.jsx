@@ -3,33 +3,11 @@ import { Calendar, FileText, User } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 
 const RiwayatMedis = ({ medicalRecords = [] }) => {
-  const { address } = useAuth();
-  const [doctorNames, setDoctorNames] = useState({});
-
-  useEffect(() => {
-    const fetchDoctors = async () => {
-      try {
-        const res = await fetch('http://localhost:5000/auth/doctors');
-        const data = await res.json();
-        if (data && data.doctors) {
-          const map = {};
-          data.doctors.forEach(doc => {
-            map[doc.address.toLowerCase()] = doc.name;
-          });
-          setDoctorNames(map);
-        }
-      } catch (err) {
-        console.error("Gagal load dokter:", err);
-      }
-    };
-    fetchDoctors();
-  }, []);
-
   return (
     <div className="menu-wrapper">
       <div className="header-section">
         <h2 className="title">Riwayat Data Medis</h2>
-        <p className="subtitle">Daftar rekam medis Anda yang tersimpan secara aman di Blockchain</p>
+        <p className="subtitle">Daftar rekam medis Anda yang tersimpan secara aman dalam sistem</p>
       </div>
 
       <div className="card-white">
@@ -46,39 +24,28 @@ const RiwayatMedis = ({ medicalRecords = [] }) => {
                   <th><div className="th-content"><Calendar size={14} /> Tanggal & Waktu</div></th>
                   <th><div className="th-content"><FileText size={14} /> Diagnosis</div></th>
                   <th><div className="th-content"><User size={14} /> Diterbitkan Oleh</div></th> 
-
                 </tr>
               </thead>
               <tbody>
                 {medicalRecords
-                  .filter((rec) => {
-                    
-                    const isNonAktif = rec.isActive === false || rec.isActive === 0 || rec.isActive === "false";
-                    return !isNonAktif;
-                  })
+                  .filter((rec) => rec.isActive !== false)
                   .map((rec, idx) => (
-                    <tr key={idx}>
+                    <tr key={rec.id}>
                       <td className="td-date">
-                        {new Date(rec.timestamp * 1000).toLocaleString('id-ID', {
+                        {new Date(rec.timestamp).toLocaleString('id-ID', {
                           day: '2-digit', month: 'short', year: 'numeric'
                         })}
                       </td>
                       <td className="td-diagnosis">
                         <div className="diagnosis-badge">{rec.diagnosis}</div>
+                        {rec.symptoms && <p style={{fontSize: '11px', color: '#666', marginTop: '4px'}}><b>Gejala:</b> {rec.symptoms}</p>}
+                        {rec.treatment && <p style={{fontSize: '11px', color: '#666'}}><b>Terapi:</b> {rec.treatment}</p>}
                       </td>
                       <td className="td-doctor">
-                        <span className="doctor-wallet">
-                          {(() => {
-                            const rawAddr = rec.doctor || "";
-                            const docAddr = rawAddr.trim().toLowerCase();
-                            if (doctorNames && doctorNames[docAddr]) {
-                              return `dr. ${doctorNames[docAddr]}`;
-                            }
-                            return rawAddr ? `dr. ${rawAddr.substring(0, 6)}...` : "Dokter Terverifikasi";
-                          })()}
+                        <span className="doctor-name">
+                          dr. {rec.doctor}
                         </span>
                       </td>
-
                     </tr>
                   ))}
               </tbody>
@@ -101,7 +68,7 @@ const RiwayatMedis = ({ medicalRecords = [] }) => {
         .th-content { display: flex; align-items: center; gap: 8px; }
         .medical-table td { padding: 18px 20px; border-bottom: 1px solid #f9f9f9; font-size: 13px; color: #444; vertical-align: top; }
         .diagnosis-badge { background: #e8f5e9; color: #2e7d32; padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 12px; display: inline-block; word-wrap: break-word; overflow-wrap: break-word; white-space: normal; max-width: 100%; }
-        .doctor-wallet { font-family: sans-serif; color: #1976d2; background: #e3f2fd; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+        .doctor-name { font-family: sans-serif; color: #1976d2; background: #e3f2fd; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
 
         .empty-state { padding: 60px; text-align: center; color: #aaa; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }

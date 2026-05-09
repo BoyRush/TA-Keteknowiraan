@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 
 const PendingVerification = () => {
-  const { address, userName, logout, checkStatus } = useAuth();
+  const { id, fullName, logout, checkStatus } = useAuth();
   const router = useRouter();
   const [statusInfo, setStatusInfo] = useState({ status: 'pending', reason: '' });
   const [loading, setLoading] = useState(true);
@@ -15,25 +15,25 @@ const PendingVerification = () => {
   const [uploading, setUploading] = useState(false);
 
   const fetchCurrentStatus = async () => {
-    if (!address) return;
+    if (!id) return;
     try {
-      const res = await axios.get(`http://127.0.0.1:5000/auth/status/${address}`);
+      const token = localStorage.getItem('herbalchain_token');
+      const res = await axios.get(`http://127.0.0.1:5000/auth/status/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       if (res.data) {
         setStatusInfo({
           status: res.data.verification_status,
           reason: res.data.rejection_reason
         });
         
-        if (res.data.verification_status === 'verified') {
-           await checkStatus();
+        if (res.data.verification_status === 'approved') {
+           // Redirect if approved
+           if (typeof window !== 'undefined') window.location.reload();
         }
       }
     } catch (err) {
-      if (err.response?.status === 404) {
-        console.warn("Status belum tersedia di database, mencoba sinkronisasi...");
-      } else {
-        console.error("Gagal ambil status:", err);
-      }
+      console.error("Gagal ambil status:", err);
     } finally {
       setLoading(false);
     }
@@ -41,21 +41,24 @@ const PendingVerification = () => {
 
   useEffect(() => {
     fetchCurrentStatus();
-    const interval = setInterval(fetchCurrentStatus, 10000); // Cek tiap 10 detik
+    const interval = setInterval(fetchCurrentStatus, 10000); 
     return () => clearInterval(interval);
-  }, [address]);
+  }, [id]);
 
   const handleReupload = async () => {
     if (!newFile) return alert("Pilih file terlebih dahulu!");
     setUploading(true);
     try {
+      const token = localStorage.getItem('herbalchain_token');
       const formData = new FormData();
-      formData.append("address", address);
+      formData.append("user_id", id);
       formData.append("document", newFile);
-      formData.append("role", "doctor"); 
       
       const res = await axios.post('http://127.0.0.1:5000/auth/reupload-document', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
+          headers: { 
+            'Content-Type': 'multipart/form-data',
+            'Authorization': `Bearer ${token}`
+          }
       });
 
       if (res.status === 200) {
@@ -90,8 +93,8 @@ const PendingVerification = () => {
         
         <p className="subtitle">
           {statusInfo.status === 'rejected' 
-            ? `Maaf ${userName}, dokumen Anda tidak dapat kami verifikasi.`
-            : `Halo ${userName}. Akun Anda sedang dalam proses peninjauan.`}
+            ? `Maaf ${fullName}, dokumen Anda tidak dapat kami verifikasi.`
+            : `Halo ${fullName}. Akun Anda sedang dalam proses peninjauan.`}
         </p>
 
         {statusInfo.status === 'rejected' && statusInfo.reason && (
@@ -104,7 +107,7 @@ const PendingVerification = () => {
         <div className="status-box">
           <div className="status-item">
             <CheckCircle size={18} color="#4caf50" />
-            <span>Registrasi Blockchain Berhasil</span>
+            <span>Pendaftaran Berhasil</span>
           </div>
           
           {statusInfo.status === 'rejected' ? (

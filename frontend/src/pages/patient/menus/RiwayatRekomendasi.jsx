@@ -2,20 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { Clock, BookOpen, MessageCircle, Lock } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 
-const RiwayatRekomendasi = ({ address }) => {
+const RiwayatRekomendasi = () => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const { membership } = useAuth();
   const isPremium = membership?.tier === 'premium';
 
-useEffect(() => {
+  useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/sh/herbal/history?address=${address}`);
+        const token = localStorage.getItem('herbalchain_token');
+        const res = await fetch(`http://127.0.0.1:5000/sh/herbal/history`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
         const data = await res.json();
         
-        if (Array.isArray(data)) {
-          setHistory(data);
+        if (data && data.history) {
+          setHistory(data.history);
         } else {
           setHistory([]);
         }
@@ -26,8 +29,8 @@ useEffect(() => {
         setLoading(false);
       }
     };
-    if (address) fetchHistory();
-  }, [address]);
+    fetchHistory();
+  }, []);
 
   return (
     <div className="menu-wrapper">

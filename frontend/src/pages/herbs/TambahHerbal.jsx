@@ -8,7 +8,7 @@ const TambahHerbal = ({ form, setForm, onSave, isSaving, onCancel }) => {
       <div className="header-section">
         {/* Judul berubah otomatis jika ada form.id (Mode Edit) */}
         <h1 className="title">
-          {form.id ? `✏️ Edit Pengetahuan: ${form.name}` : "➕ Tambah Pengetahuan Baru"}
+          {form.id ? `✏️ Edit Pengetahuan: ${form.nama}` : "➕ Tambah Pengetahuan Baru"}
         </h1>
         <p className="subtitle">
           {form.id 
@@ -19,7 +19,6 @@ const TambahHerbal = ({ form, setForm, onSave, isSaving, onCancel }) => {
 
       <form onSubmit={onSave} className="form-container">
         
-        {/* SECTION 1: NAMA TANAMAN */}
         <div className="section-block">
           <div className="section-title">
             <Info size={18} /> Identitas Tanaman
@@ -29,9 +28,25 @@ const TambahHerbal = ({ form, setForm, onSave, isSaving, onCancel }) => {
             <input 
               type="text" 
               placeholder="Contoh: Sambiloto, Temulawak, dsb..."
-              value={form.name || ""}
-              onChange={(e) => setForm({...form, name: e.target.value})}
+              value={form.nama || ""}
+              onChange={(e) => setForm({...form, nama: e.target.value})}
               required 
+            />
+          </div>
+        </div>
+
+        {/* SECTION 1.5: DESKRIPSI */}
+        <div className="section-block mt-30">
+          <div className="section-title">
+            <Info size={18} /> Deskripsi / Penjelasan Botani
+          </div>
+          <div className="input-group">
+            <label>Deskripsi (Opsional)</label>
+            <textarea 
+              className="large-area"
+              placeholder="Contoh: Tanaman perdu dengan tinggi 1-3 meter, kaya akan senyawa andrographolide..."
+              value={form.deskripsi || ""}
+              onChange={(e) => setForm({...form, deskripsi: e.target.value})}
             />
           </div>
         </div>

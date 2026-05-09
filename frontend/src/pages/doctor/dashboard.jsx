@@ -1,502 +1,273 @@
-    import React, { useState, useEffect, useCallback } from 'react';
-    import Sidebar from '../../components/Sidebar';
-    import { useAuth } from '../../context/AuthContext';
-    import { useRouter } from 'next/router';
-    import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../../api/contract_abi';
-    import { ethers } from 'ethers';
-    import BerandaDokter from './BerandaDokter'; 
-    import RequestAccess from './RequestAccess';
-    import PasienSaya from './PasienSaya';
-    import NotifikasiDokter from './NotifikasiDokter';
-    import InputDataMedis from './InputDataMedis';
-    import RiwayatInput from './RiwayatInput';
-    import ProfilSaya from '../../components/ProfilSaya';
+import React, { useState, useEffect, useCallback } from 'react';
+import Sidebar from '../../components/Sidebar';
+import { useAuth } from '../../context/AuthContext';
+import { useRouter } from 'next/router';
+import axios from 'axios';
+import BerandaDokter from './BerandaDokter'; 
+import RequestAccess from './RequestAccess';
+import PasienSaya from './PasienSaya';
+import NotifikasiDokter from './NotifikasiDokter';
+import InputDataMedis from './InputDataMedis';
+import RiwayatInput from './RiwayatInput';
+import ProfilSaya from '../../components/ProfilSaya';
 
-    const DoctorDashboard = () => {
-      const { address, userName, role, status, loading, isAuthenticated } = useAuth();
-      const router = useRouter();
-      const [activeTab, setActiveTab] = useState('dashboard');
-      const [patientAddr, setPatientAddr] = useState(''); 
-      const [txLoading, setTxLoading] = useState(false);
-      const [notifs, setNotifs] = useState([]); 
-      const [medicalData, setMedicalData] = useState('');
-      const [isEditMode, setIsEditMode] = useState(false);
-      const [selectedRecordIndex, setSelectedRecordIndex] = useState(null);
-      
-      const [patientsHistory, setPatientsHistory] = useState([]);
-      const [approvedDocs, setApprovedDocs] = useState([]); 
-      const [pendingDocs, setPendingDocs] = useState([]);
-      const [rejectedDocs, setRejectedDocs] = useState([]); 
+const DoctorDashboard = () => {
+  const { id, username, fullName, role, status, loading, isAuthenticated } = useAuth();
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [patientAddr, setPatientAddr] = useState(''); 
+  const [txLoading, setTxLoading] = useState(false);
+  const [notifs, setNotifs] = useState([]); 
+  const [patientsHistory, setPatientsHistory] = useState([]);
+  
+  const [medicalData, setMedicalData] = useState({
+    diagnosis: '',
+    symptoms: '',
+    treatment: '',
+    notes: ''
+  });
+  
+  const [approvedDocs, setApprovedDocs] = useState([]); 
+  const [pendingDocs, setPendingDocs] = useState([]);
+  const [rejectedDocs, setRejectedDocs] = useState([]); 
 
-      useEffect(() => {
-        if (loading) return;
-        if (!isAuthenticated) {
-          router.replace('/login');
-          return;
-        }
-        if (status === 'pending_approval') {
-          router.replace('/pending-verification');
-          return;
-        }
-        // Dokter Herbal TIDAK boleh akses halaman ini — arahkan ke dashboard mereka
-        if (role === 'herbal_doctor') {
-          router.replace('/herbs/dashboard');
-          return;
-        }
-        if (role !== 'doctor') {
-          router.replace('/login');
-          return;
-        }
-      }, [loading, isAuthenticated, role, status, router]);
-
-      const fetchNotifications = useCallback(async () => {
-        if (!address) return;
-        try {
-          const res = await fetch(`http://localhost:5000/notifications?address=${address}`);
-          const data = await res.json();
-          setNotifs(data); 
-        } catch (e) {
-          console.error("Gagal ambil notif untuk badge:", e);
-        }
-      }, [address]);
-      const prepareEdit = (record) => {
-          setPatientAddr(record.patientAddress);
-          setMedicalData(record.diagnosis);
-          setSelectedRecordIndex(record.blockchainIndex || 0); 
-          setIsEditMode(true);
-          setActiveTab('input'); 
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-      };
-
-      const handleDeleteMedical = async (patientAddress, index, cid) => {
-        if (!window.confirm("Apakah Anda yakin ingin menonaktifkan data medis ini?")) return;
-        setTxLoading(true);
-
-        try {
-            const provider = new ethers.providers.Web3Provider(window.ethereum);
-            const signer = provider.getSigner();
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-
-            console.log("📡 Mengirim transaksi ke Blockchain untuk index:", index);
-            const tx = await contract.deactivateMedicalRecord(
-                ethers.utils.getAddress(patientAddress), 
-                index !== undefined && index !== null ? index : 0
-            );
-            
-            alert("Sedang memproses di Blockchain... Mohon tunggu.");
-            await tx.wait(); 
-
-            const cleanAddr = patientAddress.toLowerCase();
-            const url = `http://127.0.0.1:5000/medical/delete-by-cid?cid=${cid}&patient=${cleanAddr}`;
-            
-            console.log("📡 Menghapus di AI lewat URL:", url);
-            
-            const resAI = await fetch(url, { method: "DELETE" });
-            const resultAI = await resAI.json();
-
-            if (resAI.ok) {
-                alert("Berhasil! Data dinonaktifkan di Blockchain & AI.");
-            } else {
-                alert(`Blockchain Sukses, tapi AI: ${resultAI.error || 'Data tidak ditemukan'}`);
-            }
-
-            fetchMedicalHistory(); 
-            
-        } catch (error) {
-            console.error("🔥 Error Detail:", error);
-            const msg = error.data?.message || error.message;
-            alert("Gagal memproses: " + msg);
-        } finally {
-            setTxLoading(false);
-        }
-    };
-
-const handleSaveMedicalData = async (e) => {
-          e.preventDefault();
-          if (!patientAddr) return alert("Pilih pasien terlebih dahulu!");
-          
-          setTxLoading(true);
-          try {
-              const provider = new ethers.providers.Web3Provider(window.ethereum);
-              const signer = provider.getSigner();
-              const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-              const patientChecksum = ethers.utils.getAddress(patientAddr.toLowerCase().trim());
-
-              let currentCid = "";
-
-              if (isEditMode) {
-                  // MODE EDIT
-                  const res = await fetch(`http://127.0.0.1:5000/medical/update`, {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                          diagnosis: medicalData,
-                          patient_address: patientAddr,
-                          index: selectedRecordIndex
-                      })
-                  });
-                  const result = await res.json();
-                  currentCid = result.ipfs_cid;
-              } else {
-                  // DATA BARU
-                  const records = await contract.getMedicalRecords(patientChecksum);
-                  const nextIndex = records.length;
-
-                  const res = await fetch(`http://127.0.0.1:5000/medical/store`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                          diagnosis: medicalData,
-                          patient_address: patientAddr,
-                          blockchain_index: nextIndex
-                      })
-                  });
-                  const result = await res.json();
-                  currentCid = result.ipfs_cid;
-              }
-
-              // Simpan ke Blockchain
-              if (isEditMode) {
-                  // Edit = Nonaktifkan record lama + simpan record baru
-                  const txDeactivate = await contract.deactivateMedicalRecord(patientChecksum, selectedRecordIndex);
-                  await txDeactivate.wait();
-                  const txStore = await contract.storeMedicalRecord(patientChecksum, currentCid);
-                  await txStore.wait();
-              } else {
-                  const tx = await contract.storeMedicalRecord(patientChecksum, currentCid);
-                  await tx.wait();
-              }
-
-              // Notifikasi ke Pasien
-              const ringkasan = medicalData.substring(0, 30) + "...";
-              await fetch('http://127.0.0.1:5000/notifications/add', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                      address: patientAddr,
-                      pesan: `dr. ${userName || 'Dokter'} ${isEditMode ? 'memperbarui' : 'menambahkan'} diagnosa: "${ringkasan}"`
-                  })
-              });
-
-              alert(`Diagnosa Berhasil ${isEditMode ? 'Diperbarui' : 'Disimpan'}!`);
-              setMedicalData('');
-              setPatientAddr('');
-              setIsEditMode(false);
-              fetchMedicalHistory(); 
-              setActiveTab('dashboard'); 
-          } catch (error) {
-              alert("Gagal menyimpan: " + error.message);
-          } finally {
-              setTxLoading(false);
-          }
-      };
-
-      const handleTabChange = async (newTab) => {
-        setActiveTab(newTab);
-
-        if (newTab === 'notifikasi') {
-            try {
-                await fetch('http://127.0.0.1:5000/notifications/mark-read', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address: address })
-                });
-                // Refresh notifikasi dari server agar selalu up-to-date
-                await fetchNotifications();
-            } catch (err) {
-                console.error("Gagal update status baca:", err);
-            }
-        }
-    };
-      const handleRequestAccess = async (e) => {
-          if (e) e.preventDefault(); 
-          
-          if (!ethers.utils.isAddress(patientAddr)) {
-              return alert("Alamat wallet pasien tidak valid!");
-          }
-
-          setTxLoading(true);
-          try {
-              const provider = new ethers.providers.Web3Provider(window.ethereum);
-              const signer = provider.getSigner();
-              const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-
-              const tx = await contract.requestAccess(patientAddr);
-              
-              console.log("Transaksi dikirim:", tx.hash);
-              await tx.wait(); 
-
-              // Tandai di localStorage bahwa dokter ini pernah request ke pasien ini
-              // Dipakai untuk mendeteksi status 'Ditolak' di loadPatientStatus
-              const patientChecksum = ethers.utils.getAddress(patientAddr.toLowerCase());
-              const rejectedKey = `rejected_${address.toLowerCase()}_${patientChecksum.toLowerCase()}`;
-              localStorage.setItem(rejectedKey, 'requested');
-
-              await fetch("http://127.0.0.1:5000/notifications/add", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                      address: patientAddr.toLowerCase(),
-                      pesan: `📩 Permintaan Akses Baru: dr. ${userName || address.substring(0, 6) + '...'} meminta izin mengakses rekam medis Anda.`
-                  })
-              });
-
-              alert("Permintaan akses berhasil dikirim ke Pasien!");
-              setPatientAddr(''); 
-              
-              loadPatientStatus(); 
-              
-          } catch (error) {
-              console.error("Gagal request akses:", error);
-              const errorMessage = error.data?.message || error.message;
-              alert("Gagal mengirim permintaan: " + errorMessage);
-          } finally {
-              setTxLoading(false);
-          }
-      };
-
-      // ==========================================
-      // 1. LOAD STATUS AKSES (BLOCKCHAIN + SQL)
-      // ==========================================
-    const loadPatientStatus = useCallback(async () => {
-    console.log("🔍 [DEBUG] loadPatientStatus dijalankan...");
-
-    if (!window.ethereum || !address || role !== 'doctor') {
+  useEffect(() => {
+    if (loading) return;
+    if (!isAuthenticated) {
+      router.replace('/login');
       return;
     }
+    if (status === 'pending') {
+      router.replace('/pending-verification');
+      return;
+    }
+    if (role === 'herbal_doctor') {
+      router.replace('/herbs/dashboard');
+      return;
+    }
+    if (role !== 'doctor') {
+      router.replace('/login');
+      return;
+    }
+  }, [loading, isAuthenticated, role, status, router]);
 
+  const fetchNotifications = useCallback(async () => {
     try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider);
+      const token = localStorage.getItem('herbalchain_token');
+      const res = await axios.get(`http://127.0.0.1:5000/notifications`, {
+          headers: { Authorization: `Bearer ${token}` }
+      });
+      setNotifs(res.data); 
+    } catch (e) {
+      console.error("Gagal ambil notif:", e);
+    }
+  }, []);
+
+  const handleSaveMedicalData = async (e) => {
+      e.preventDefault();
+      if (!patientAddr) return alert("Pilih pasien terlebih dahulu!");
       
-      // 1. AMBIL DAFTAR PASIEN
-      console.log("📡 [DEBUG] Memanggil API Pasien: http://127.0.0.1:5000/auth/patients");
-      const res = await fetch("http://127.0.0.1:5000/auth/patients"); 
-      const data = await res.json();
-      const allPatients = data.patients || []; 
-
-      console.log(`📊 [DEBUG] Ditemukan ${allPatients.length} Pasien Terdaftar di Blockchain.`);
-
-      let pending = [];
-      let approved = [];
-      let rejected = [];
-
-      // 2. LOOP DAFTAR PASIEN
-      for (let patient of allPatients) {
-        try {
-          const pAddr = patient.address;
-          if (!ethers.utils.isAddress(pAddr)) continue;
-
-          const pChecksum = ethers.utils.getAddress(pAddr);
-          
-          // 3. CEK HUBUNGAN: Apakah dokter ini punya akses ke pasien ini?
-          const isAuth = await contract.checkAccess(pChecksum, address);
-          const isPending = await contract.pendingRequests(pChecksum, address);
-
-          console.log(`🧐 [DEBUG] Memeriksa: ${patient.name} (${pChecksum.substring(0, 6)}...)`);
-          console.log(`    > Status: Approved=${isAuth}, Pending=${isPending}`);
-
-          const tanggalHariIni = new Date().toLocaleDateString('id-ID', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric'
+      setTxLoading(true);
+      try {
+          const token = localStorage.getItem('herbalchain_token');
+          await axios.post(`http://127.0.0.1:5000/records/medical`, {
+              patient_user_id: patientAddr,
+              ...medicalData
+          }, {
+              headers: { Authorization: `Bearer ${token}` }
           });
 
-          let statusLabel = 'Ditolak';
-          if (isAuth) statusLabel = 'Aktif';
-          else if (isPending) statusLabel = 'Menunggu';
-
-          const mappedData = {
-            name: patient.name || "Pasien",
-            address: pChecksum,
-            date: tanggalHariIni,
-            status: statusLabel
-          };
-
-          if (isAuth) {
-            approved.push(mappedData);
-          } else if (isPending) {
-            pending.push(mappedData);
-          } else {
-            // Pernah dikirim request (ada di riwayat notifikasi) namun sudah ditolak pasien
-            // Kita cek apakah dokter pernah send request ke pasien ini melalui localStorage
-            const rejectedKey = `rejected_${address.toLowerCase()}_${pChecksum.toLowerCase()}`;
-            if (localStorage.getItem(rejectedKey) === 'requested') {
-              rejected.push({ ...mappedData, status: 'Ditolak' });
-            }
-          }
-        } catch (err) { continue; }
-      }
-
-      console.log("[DEBUG] Hasil Akhir Mapping Dokter:", { approved: approved.length, pending: pending.length, rejected: rejected.length });
-      
-      setApprovedDocs(approved);
-      setPendingDocs(pending);
-      setRejectedDocs(rejected);
-
-    } catch (error) {
-      console.error(" [DEBUG] Gagal load status:", error);
-    }
-  }, [address, role]);
-
-      // ==========================================
-      // 2. FETCH RIWAYAT INPUT (FLASK)
-      // ==========================================
-      const fetchMedicalHistory = useCallback(async () => {
-        if (!address) return;
-        try {
-          const response = await fetch(`http://127.0.0.1:5000/medical/list?doctor=${address}&t=${Date.now()}`);
-          const data = await response.json();
-          if (response.ok && data.history) {
-            setPatientsHistory(data.history);
-          }
-        } catch (error) {
-          console.error("Gagal fetch riwayat:", error);
-        }
-      }, [address]);
-
-      useEffect(() => {
-        if (!loading && address && role === 'doctor') {
+          alert(`Data Medis Berhasil Disimpan!`);
+          setMedicalData({ diagnosis: '', symptoms: '', treatment: '', notes: '' });
+          setPatientAddr('');
+          setActiveTab('dashboard'); 
           loadPatientStatus();
-          fetchMedicalHistory();
-          fetchNotifications();
+      } catch (error) {
+          alert("Gagal menyimpan: " + (error.response?.data?.error || error.message));
+      } finally {
+          setTxLoading(false);
+      }
+  };
+
+  const handleTabChange = async (newTab) => {
+    setActiveTab(newTab);
+    if (newTab === 'notifikasi') {
+        try {
+            const token = localStorage.getItem('herbalchain_token');
+            await axios.post('http://127.0.0.1:5000/notifications/mark-read', {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            await fetchNotifications();
+        } catch (err) {
+            console.error("Gagal update status baca:", err);
         }
-      }, [loading, address, role, loadPatientStatus, fetchMedicalHistory]);
+    }
+  };
 
-      // ==========================================
-      // 3. LOGIKA PENGOLAHAN DATA UNTUK BERANDA
-      // ==========================================
+  const handleRequestAccess = async (targetUserId) => {
+      if (!targetUserId) return alert("User ID pasien tidak valid!");
+
+      setTxLoading(true);
+      try {
+          const token = localStorage.getItem('herbalchain_token');
+          await axios.post("http://127.0.0.1:5000/access/request", 
+            { patient_user_id: targetUserId },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+
+          alert("Permintaan akses berhasil dikirim ke Pasien!");
+          loadPatientStatus(); 
+      } catch (error) {
+          console.error("Gagal request akses:", error);
+          alert("Gagal mengirim permintaan: " + (error.response?.data?.error || error.message));
+      } finally {
+          setTxLoading(false);
+      }
+  };
+
+  const loadPatientStatus = useCallback(async () => {
+    if (!id || role !== 'doctor') return;
+    try {
+      const token = localStorage.getItem('herbalchain_token');
+      const res = await axios.get("http://127.0.0.1:5000/access/patients", {
+          headers: { Authorization: `Bearer ${token}` }
+      });
       
-      // A. Hitung Total Semua Inputan (Bukan cuma jumlah pasien)
-      const totalSemuaInputan = patientsHistory.reduce((acc, p) => {
-        const activeCount = p.medicalRecords ? p.medicalRecords.filter(r => r.isActive).length : 0;
-        return acc + activeCount;
-      }, 0);
+      const allPatients = res.data.patients || []; 
+      
+      const tanggalHariIni = new Date().toLocaleDateString('id-ID', {
+        day: 'numeric', month: 'short', year: 'numeric'
+      });
 
-      // B. Bongkar data (Flatten) agar semua riwayat muncul di list bawah
-      const allFormattedInputs = patientsHistory.flatMap(p => 
-        (p.medicalRecords || [])
-          .filter(r => r.isActive)
-          .map(r => {
-            const isIsoString = typeof r.timestamp === 'string';
-            const rawDateObj = isIsoString ? new Date(r.timestamp) : new Date(r.timestamp * 1000);
-            return {
-              patientName: p.name || `${p.address.substring(0, 6)}...`,
-              date: rawDateObj.toLocaleDateString('id-ID', {
+      const mapped = allPatients.map(p => ({
+          name: p.patient_name || "Pasien",
+          id: p.patient_user_id,
+          date: tanggalHariIni,
+          status: p.status === 'approved' ? 'Aktif' : p.status === 'pending' ? 'Menunggu' : 'Ditolak'
+      }));
+
+      setApprovedDocs(mapped.filter(p => p.status === 'Aktif'));
+      setPendingDocs(mapped.filter(p => p.status === 'Menunggu'));
+      setRejectedDocs(mapped.filter(p => p.status === 'Ditolak'));
+    } catch (error) {
+      console.error("Gagal load status:", error);
+    }
+  }, [id, role]);
+
+  const fetchMedicalHistory = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('herbalchain_token');
+      const res = await axios.get("http://127.0.0.1:5000/records/medical/doctor", {
+          headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (res.data.records) {
+          const mapped = res.data.records.map(r => ({
+              id: r.id,
+              patientName: r.patient_name,
+              patientId: r.patient_user_id,
+              diagnosis: r.diagnosis,
+              date: new Date(r.created_at).toLocaleDateString('id-ID', {
                   day: 'numeric', month: 'short', year: 'numeric'
               }),
-              diagnosis: r.diagnosis,
-              tags: [r.diagnosis.substring(0, 15) + "..."],
-              rawTimestamp: isIsoString ? rawDateObj.getTime() : r.timestamp * 1000
-            };
-          })
-      ).sort((a, b) => b.rawTimestamp - a.rawTimestamp); // Urutkan terbaru di atas
+              timestamp: r.created_at,
+              tags: [r.diagnosis.split(',')[0]] // Example tag
+          }));
+          setPatientsHistory(mapped);
+      }
+    } catch (error) {
+      console.error("Gagal load riwayat medis:", error);
+    }
+  }, []);
 
-      return (
-        <div className="doctor-layout">
-          {/* Sidebar Maria yang sudah Paten */}
-          <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} notifications={{ notifCount: notifs.filter(n => !n.is_read).length }}/>
+  useEffect(() => {
+    if (!loading && username && role === 'doctor') {
+      loadPatientStatus();
+      fetchMedicalHistory();
+      fetchNotifications();
+    }
+  }, [loading, username, role, loadPatientStatus, fetchMedicalHistory, fetchNotifications]);
 
-          <main className="main-content">
-          {activeTab === 'dashboard' && (
-          <BerandaDokter 
-            stats={{
-              active: approvedDocs.length,
-              pending: pendingDocs.length,
-              totalInput: totalSemuaInputan,
-              rejected: rejectedDocs.length 
-            }}
-            // Kolom Kiri: Pasien Aktif
-            activePatients={approvedDocs.slice(0, 5)}
-            
-            // KOLOM KANAN: Status Request (Kita gabungkan Pending + Approved + Rejected)
-            recentRequests={[
-              ...pendingDocs.map(r => ({ ...r, status: "Menunggu" })),
-              ...approvedDocs.map(a => ({ ...a, status: "Aktif" })),
-              ...rejectedDocs.map(r => ({ ...r, status: "Ditolak" })),
-            ].slice(0, 5)} // Ambil 5 yang terbaru
-            
-            recentInputs={allFormattedInputs.slice(0, 5)} 
-            changeTab={setActiveTab}
+  const totalSemuaInputan = patientsHistory.length; 
+  const allFormattedInputs = patientsHistory.map(h => ({
+      patientName: h.patientName,
+      date: h.date,
+      tags: h.tags
+  }));
+
+  return (
+    <div className="doctor-layout">
+      <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} notifications={{ notifCount: notifs.filter(n => !n.is_read).length }}/>
+
+      <main className="main-content">
+      {activeTab === 'dashboard' && (
+      <BerandaDokter 
+        stats={{
+          active: approvedDocs.length,
+          pending: pendingDocs.length,
+          totalInput: totalSemuaInputan,
+          rejected: rejectedDocs.length 
+        }}
+        activePatients={approvedDocs.slice(0, 5)}
+        recentRequests={[
+          ...pendingDocs,
+          ...approvedDocs,
+          ...rejectedDocs,
+        ].slice(0, 5)} 
+        recentInputs={allFormattedInputs.slice(0, 5)} 
+        changeTab={setActiveTab}
+      />
+    )}
+        {activeTab === 'request' && (
+          <RequestAccess 
+            handleRequest={handleRequestAccess}
+            txLoading={txLoading}
+            pendingRequests={pendingDocs} 
+            approvedDocs={approvedDocs}
+            rejectedRequests={rejectedDocs}
           />
         )}
-            {activeTab === 'request' && (
-              <RequestAccess 
+
+        {activeTab === 'input' && (
+            <InputDataMedis 
+                approvedPatients={approvedDocs} 
                 patientAddr={patientAddr}
                 setPatientAddr={setPatientAddr}
-                handleRequest={handleRequestAccess}
+                medicalData={medicalData}
+                setMedicalData={setMedicalData}
+                handleSave={handleSaveMedicalData}
                 txLoading={txLoading}
-                pendingRequests={pendingDocs} 
-                approvedDocs={approvedDocs}
-                rejectedRequests={rejectedDocs}
-              />
-            )}
+                isEditMode={false}
+            />
+        )}
 
-            {/* Tab Tambah Data Medis */}
-            {activeTab === 'input' && (
-                <InputDataMedis 
-                    approvedPatients={approvedDocs} // Kirim daftar pasien yang Approved
-                    patientAddr={patientAddr}
-                    setPatientAddr={setPatientAddr}
-                    medicalData={medicalData}
-                    setMedicalData={setMedicalData}
-                    handleSave={handleSaveMedicalData}
-                    txLoading={txLoading}
-                    isEditMode={isEditMode}
-                />
-            )}
+        {activeTab === 'list' && (
+            <PasienSaya changeTab={setActiveTab} />
+        )}
 
-            {/* Tab Pasien Saya */}
-            {activeTab === 'list' && (
-                <PasienSaya 
-                    changeTab={setActiveTab} 
-                />
-            )}
+        {activeTab === 'riwayat' && (
+            <RiwayatInput 
+                patientsHistory={patientsHistory}
+                txLoading={txLoading}
+            />
+        )}
 
-            {/* Tab Notifikasi */}
-            {activeTab === 'notifikasi' && (
-              <div className="menu-wrapper">
-                <NotifikasiDokter address={address} />
-              </div>
-            )}
-            {activeTab === 'riwayat' && (
-                <RiwayatInput 
-                    patientsHistory={patientsHistory} 
-                    onEdit={prepareEdit} 
-                    onDelete={handleDeleteMedical}
-                    txLoading={txLoading}
-                />
-            )}
-            {activeTab === 'profil' && (
-                <ProfilSaya />
-            )}
-          </main>
+        {activeTab === 'notifikasi' && (
+          <div className="menu-wrapper">
+            <NotifikasiDokter />
+          </div>
+        )}
+        {activeTab === 'profil' && (
+            <ProfilSaya />
+        )}
+      </main>
 
-          <style jsx>{`
-            .doctor-layout { 
-              display: flex; 
-              min-height: 100vh; 
-              background: #fcfcfc; 
-              font-family: 'Inter', sans-serif;
-            }
-            .main-content { 
-              flex: 1; 
-              margin-left: 260px; 
-              padding: 40px; 
-              background: transparent;
-            }
-            .card-white { 
-              background: white; 
-              padding: 30px; 
-              border-radius: 24px; 
-              border: 1px solid #eee;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.02);
-            }
-            .tab-title { font-size: 20px; font-weight: 700; color: #333; margin-bottom: 8px; }
-            .tab-subtitle { font-size: 14px; color: #888; margin-bottom: 25px; }
-          `}</style>
-        </div>
-      );
-    };
+      <style jsx>{`
+        .doctor-layout { display: flex; min-height: 100vh; background: #fcfcfc; font-family: 'Inter', sans-serif; }
+        .main-content { flex: 1; margin-left: 260px; padding: 40px; background: transparent; }
+      `}</style>
+    </div>
+  );
+};
 
-    export default DoctorDashboard;
+export default DoctorDashboard;

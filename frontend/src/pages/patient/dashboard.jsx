@@ -9,11 +9,10 @@ import NotifikasiPasien from './menus/NotifikasiPasien';
 import ProfilSaya from '../../components/ProfilSaya';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/router';
-import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../../api/contract_abi';
-import { ethers } from 'ethers';
+import axios from 'axios';
 
 export default function PatientDashboard() {
-  const { address, role, status, loading, isAuthenticated, userName, refreshMembership } = useAuth();
+  const { id, username, role, status, loading, isAuthenticated, fullName, refreshMembership } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('beranda');
   const [medicalRecords, setMedicalRecords] = useState([]);
@@ -39,132 +38,70 @@ export default function PatientDashboard() {
     }
   }, [loading, isAuthenticated, role, status, router]);
 
- const loadRekomendasiCount = async () => {
-    if (!address || address === "null") {
-        console.log("wallet belum terdeteksi...");
-        return; 
-    }
-
+  const loadRekomendasiCount = async () => {
     try {
-        const res = await fetch(`http://localhost:5000/herbal/history-count?address=${address}`);
-        
-        if (!res.ok) {
-            console.error("Server Flask bermasalah atau endpoint tidak ditemukan");
-            return;
-        }
-
-        const data = await res.json();
-        setRekomendasiCount(data.count);
+        const token = localStorage.getItem('herbalchain_token');
+        const res = await axios.get(`http://127.0.0.1:5000/herbal/history-count`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        setRekomendasiCount(res.data.count);
     } catch (err) {
         console.error("Gagal ambil history count:", err);
     }
-};
+  };
+
   const loadRequests = async () => {
-    if (!window.ethereum || !address || role !== 'patient') return;
+    if (!id || role !== 'patient') return;
     
     try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider.getSigner());
-      const patientChecksum = ethers.utils.getAddress(address.toLowerCase());
+      const token = localStorage.getItem('herbalchain_token');
+      const headers = { Authorization: `Bearer ${token}` };
 
-      const records = await contract.getMedicalRecords(patientChecksum);
-      
-const formattedRecords = await Promise.all(records.map(async (r, index) => {
-    const isActuallyActive = r.isActive !== undefined ? r.isActive : r[3];
-
-    console.log(`📡 [DEBUG PASIEN] Data Index ${index}:`, {
-        diagnosis: r.diagnosis,
-        isActiveRaw: isActuallyActive,
-        type: typeof isActuallyActive
-    });
-
-    try {
-        const res = await fetch(`http://localhost:5000/medical/get-content?cid=${r.cid}&patient=${address}`);
-        if (!res.ok) return null;
-        
-        const textData = await res.text();
-        let diagnosisText;
-        try {
-            const json = JSON.parse(textData);
-            diagnosisText = json.diagnosis || textData;
-        } catch {
-            diagnosisText = textData;
+      // 1. Get Medical Records
+      try {
+        const recRes = await axios.get(`http://127.0.0.1:5000/records/medical/patient/${id}`, { headers });
+        if (recRes.data.status === 'success') {
+            setMedicalRecords(recRes.data.records.map(r => ({
+                id: r.id,
+                doctor: r.doctor_name,
+                timestamp: new Date(r.created_at).getTime(),
+                diagnosis: r.diagnosis,
+                symptoms: r.symptoms,
+                treatment: r.treatment,
+                notes: r.notes,
+                isActive: true
+            })));
         }
+      } catch (err) { console.error("Gagal ambil rekam medis", err); }
 
-        return {
-            cid: r.cid,
-            doctor: r.doctor || r[2],
-            timestamp: r.timestamp.toNumber ? r.timestamp.toNumber() : r.timestamp,
-            diagnosis: diagnosisText,
-            isActive: isActuallyActive 
-        };
-    } catch (err) { return null; }
-}));
-
-     const finalData = formattedRecords
-    .filter(r => 
-        r !== null && 
-        (r.isActive === true || r.isActive === 1) 
-    )
-    .sort((a, b) => b.timestamp - a.timestamp);
-    console.log("📊 [DEBUG PASIEN] TOTAL DATA DARI BLOCKCHAIN:", formattedRecords.length);
-console.log("🎯 [DEBUG PASIEN] TOTAL DATA LOLOS FILTER (AKTIF):", finalData.length);
-console.log("📋 [DEBUG PASIEN] ISI DATA YANG AKAN TAMPIL:", finalData);
-
-setMedicalRecords(finalData);
-
-      const resDocs = await fetch("http://127.0.0.1:5000/auth/doctors");
-      const dataDocs = await resDocs.json();
-      const allDoctors = dataDocs.doctors || [];
-
-      let pending = [];
-      let approved = [];
-
-      for (let docObj of allDoctors) { 
-        try {
-          const rawAddr = typeof docObj === 'object' ? docObj.address : docObj;
-          const docChecksum = ethers.utils.getAddress(rawAddr);
-          
-          const isAuth = await contract.checkAccess(patientChecksum, docChecksum);
-          const isPending = await contract.pendingRequests(patientChecksum, docChecksum);
-          
-          const docName = docObj.name || "Dokter";
-
-          if (isAuth) {
-            approved.push({ name: docName, address: docChecksum });
-          } else if (isPending) {
-            pending.push({ name: docName, address: docChecksum });
-          }
-        } catch (err) { 
-          console.error("Error pada dokter:", docObj, err); 
+      // 2. Get Doctors Permissions Status
+      try {
+        const accessRes = await axios.get(`http://127.0.0.1:5000/access/status`, { headers });
+        if (accessRes.data.status === 'success') {
+            const permissions = accessRes.data.permissions;
+            setApprovedDocs(permissions.filter(p => p.status === 'approved').map(p => ({
+                name: p.doctor_name, id: p.doctor_user_id 
+            })));
+            setPendingDocs(permissions.filter(p => p.status === 'pending').map(p => ({
+                name: p.doctor_name, id: p.doctor_user_id
+            })));
         }
-      }
-
-      setApprovedDocs(approved);
-      setPendingDocs(pending);
+      } catch (err) { console.error("Gagal ambil status akses", err); }
 
     } catch (error) {
       console.error("Gagal load data:", error);
     }
   };
-    const handleRevoke = async (docAddr, docName) => {
+
+    const handleRevoke = async (docUserId, docName) => {
         setIsProcessing(true);
         try {
-            const provider = new ethers.providers.Web3Provider(window.ethereum);
-            const signer = provider.getSigner();
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-            
-            const tx = await contract.revokeAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
-            await tx.wait();
-            await fetch("http://127.0.0.1:5000/notifications/add", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    address: docAddr.toLowerCase(), // Target DOKTER
-                    pesan: `Akses Dicabut: Pasien ${userName || "Pasien"} telah mencabut izin akses Anda.`
-                })
-            });
-            alert(`Perizinan oleh Dokter ${docName || docAddr.substring(0, 6) + '...'} berhasil di cabut`);
+            const token = localStorage.getItem('herbalchain_token');
+            await axios.post("http://127.0.0.1:5000/access/respond", 
+                { doctor_user_id: docUserId, action: 'rejected' }, 
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            alert(`Perizinan oleh Dokter ${docName} berhasil di cabut`);
             await loadRequests(); 
         } catch (error) { console.error(error); }
         finally { setIsProcessing(false); }
@@ -174,95 +111,74 @@ setMedicalRecords(finalData);
     setActiveTab('notifikasi');
     
     try {
-      await fetch('http://localhost:5000/notifications/mark-read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: address })
+      const token = localStorage.getItem('herbalchain_token');
+      await axios.post('http://127.0.0.1:5000/notifications/mark-read', {}, {
+          headers: { Authorization: `Bearer ${token}` }
       });
       loadNotifications();
     } catch (err) {
       console.error(err);
     }
   };
+
   const handleGetAIRecommendation = async () => {
     if (!keluhan) return alert("Silakan isi keluhan Anda.");
     setRekomendasi(null);
     setIsRecommending(true);
 
     try {
-        const kondisiMedis = medicalRecords.map(r => r.diagnosis).join(', ');
-
-        const response = await fetch(
-            `http://localhost:5000/sh/herbal/recommendation?q=${keluhan}&medical=${kondisiMedis}&use_rag=${useRag}&address=${address}`
+        const token = localStorage.getItem('herbalchain_token');
+        const response = await axios.get(
+            `http://127.0.0.1:5000/herbal/search?q=${keluhan}&useRag=${useRag}`,
+            { headers: { Authorization: `Bearer ${token}` } }
         );
-        const data = await response.json();
         
-        if (response.status === 403 && data.status === 'quota_exceeded') {
-            alert(data.message);
-            // Router can be used if we imported it, or let MintaRekomendasi handle UI.
-            // But here we just set isRecommending false.
-            setIsRecommending(false);
-            return;
-        }
+        setRekomendasi(response.data);
         
-        setRekomendasi(data);
-        
-        // Refresh membership to update QuotaBadge
         if (refreshMembership) {
-            refreshMembership(address);
+            refreshMembership();
         }
         loadRekomendasiCount(); 
         
     } catch (error) {
         console.error("Gagal ambil rekomendasi:", error);
-        alert("Gagal terhubung ke Server Flask.");
+        if (error.response && error.response.status === 403) {
+            alert(error.response.data.message || "Batas rekomendasi gratis tercapai. Silakan upgrade ke Premium.");
+        } else {
+            alert("Gagal terhubung ke Server.");
+        }
     } finally {
         setIsRecommending(false);
     }
 };
-  const handleGrant = async (docAddr) => {
+
+  const handleGrant = async (docUserId) => {
     setIsProcessing(true);
     try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider.getSigner());
-      const tx = await contract.grantAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
-      alert("Transaksi dikirim, tunggu konfirmasi...");
-      await tx.wait();
-      await fetch("http://127.0.0.1:5000/notifications/add", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                address: docAddr.toLowerCase(), 
-                pesan: `✅ Akses Disetujui: Pasien ${address.substring(0, 6)}... telah memberikan Anda izin akses.`
-            })
-        });
+      const token = localStorage.getItem('herbalchain_token');
+      await axios.post("http://127.0.0.1:5000/access/respond", 
+        { doctor_user_id: docUserId, action: 'approved' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       alert("Akses berhasil diberikan!");
       loadRequests(); 
     } catch (error) { console.error(error); }
     finally { setIsProcessing(false); }
   };
 
-  const handleReject = async (docAddr, docName) => {
+  const handleReject = async (docUserId, docName) => {
     setIsProcessing(true);
     try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, provider.getSigner());
-      const tx = await contract.rejectAccess(ethers.utils.getAddress(docAddr.toLowerCase()));
-      await tx.wait();
-      await fetch("http://127.0.0.1:5000/notifications/add", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                address: docAddr.toLowerCase(), 
-                pesan: `Perizinan kepada Pasien ${userName || "Pasien"} telah di tolak`
-            })
-        });
-      alert(`Perizinan oleh Dokter ${docName || docAddr.substring(0, 6) + '...'} berhasil di tolak`);
+      const token = localStorage.getItem('herbalchain_token');
+      await axios.post("http://127.0.0.1:5000/access/respond", 
+        { doctor_user_id: docUserId, action: 'rejected' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert(`Perizinan oleh Dokter ${docName} berhasil di tolak`);
       loadRequests();
     } catch (error) { 
       console.error("Gagal menolak akses:", error);
-      const errorMsg = error?.data?.message || error?.message || "Terjadi kesalahan";
-      alert("Gagal menolak permintaan: " + errorMsg);
+      alert("Gagal menolak permintaan: " + (error.response?.data?.error || "Terjadi kesalahan"));
     }
     finally { setIsProcessing(false); }
   };
@@ -272,10 +188,9 @@ setMedicalRecords(finalData);
 
       if (newTab === 'notifikasi') {
           try {
-              await fetch('http://127.0.0.1:5000/notifications/mark-read', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ address: address })
+              const token = localStorage.getItem('herbalchain_token');
+              await axios.post('http://127.0.0.1:5000/notifications/mark-read', {}, {
+                  headers: { Authorization: `Bearer ${token}` }
               });
 
               loadNotifications(); 
@@ -285,13 +200,15 @@ setMedicalRecords(finalData);
           }
       }
   };
-    const loadNotifications = async () => {
-    if (!address) return;
+
+  const loadNotifications = async () => {
     try {
-      const res = await fetch(`http://127.0.0.1:5000/notifications?address=${address}`);
-      if (res.ok) {
-        const data = await res.json();
-        setNotifs(data);
+      const token = localStorage.getItem('herbalchain_token');
+      const res = await axios.get(`http://127.0.0.1:5000/notifications`, {
+          headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data && Array.isArray(res.data)) {
+        setNotifs(res.data);
       }
     } catch (err) {
       console.error("Gagal load notifikasi:", err);
@@ -299,14 +216,14 @@ setMedicalRecords(finalData);
   };
 
   useEffect(() => { 
-    if (!loading && address && role === 'patient') {
+    if (!loading && username && role === 'patient') {
       loadRequests();
       loadRekomendasiCount();
       loadNotifications();
     }
-  }, [address, loading, role]);
+  }, [username, loading, role]);
 
-  if (loading) return <p style={{textAlign: 'center', padding: '50px'}}>Memverifikasi Blockchain...</p>;
+  if (loading) return <p style={{textAlign: 'center', padding: '50px'}}>Memuat Data...</p>;
 
   return (
     <div className="layout-container">
@@ -350,14 +267,10 @@ setMedicalRecords(finalData);
             />
           )}
           {activeTab === 'riwayat_rekomendasi' && (
-          <RiwayatRekomendasi 
-            address={address} 
-          />
+          <RiwayatRekomendasi />
         )}
         {activeTab === 'notifikasi' && (
-          <NotifikasiPasien 
-            address={address} 
-          />
+          <NotifikasiPasien />
         )}
         {activeTab === 'profil' && (
           <ProfilSaya />

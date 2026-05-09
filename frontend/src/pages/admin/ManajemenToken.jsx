@@ -9,7 +9,12 @@ const ManajemenToken = () => {
 
   const fetchTokens = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:5000/sh/admin/tokens');
+      const token = localStorage.getItem('herbalchain_token');
+      const res = await fetch('http://127.0.0.1:5000/sh/admin/tokens', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setTokens(data.tokens || []);
@@ -27,8 +32,12 @@ const ManajemenToken = () => {
   const handleGenerateToken = async () => {
     setGenerating(true);
     try {
+      const token = localStorage.getItem('herbalchain_token');
       const res = await fetch('http://127.0.0.1:5000/sh/admin/tokens/generate', {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
       if (res.ok) {
         await fetchTokens();
@@ -42,8 +51,12 @@ const ManajemenToken = () => {
   const handleDeleteToken = async (id) => {
     if (!window.confirm('Yakin ingin menghapus token ini?')) return;
     try {
+      const token = localStorage.getItem('herbalchain_token');
       const res = await fetch(`http://127.0.0.1:5000/sh/admin/tokens/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
       if (res.ok) {
         await fetchTokens();
@@ -160,7 +173,7 @@ const ManajemenToken = () => {
                       {token.used_by ? (
                         <div className="user-cell">
                           <User size={14} />
-                          <span>{token.used_by.substring(0, 6)}...{token.used_by.substring(token.used_by.length - 4)}</span>
+                          <span>{token.used_by}</span>
                         </div>
                       ) : '-'}
                     </td>

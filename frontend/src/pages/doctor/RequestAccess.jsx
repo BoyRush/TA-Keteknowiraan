@@ -1,25 +1,45 @@
 import React from 'react';
 import { Info, Send, Plus } from 'lucide-react';
+import axios from 'axios';
 
 const RequestAccess = ({ 
-  patientAddr, 
-  setPatientAddr, 
   handleRequest, 
   txLoading,
   pendingRequests = [],
   approvedDocs = [],
   rejectedRequests = []
 }) => {
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [searchResults, setSearchResults] = React.useState([]);
+  const [isSearching, setIsSearching] = React.useState(false);
+  const [selectedPatient, setSelectedPatient] = React.useState(null);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchQuery) return;
+    setIsSearching(true);
+    try {
+      const token = localStorage.getItem('herbalchain_token');
+      const res = await axios.get(`http://127.0.0.1:5000/access/search-patient?q=${searchQuery}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSearchResults(res.data);
+    } catch (err) {
+      console.error("Search failed:", err);
+      alert("Pencarian gagal.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   return (
     <div className="request-wrapper">
       {/* 1. HEADER SECTION */}
       <div className="header-content">
         <div>
           <h2 className="title">Request Akses</h2>
-          <p className="subtitle">Kirim dan pantau status permintaan akses ke data pasien</p>
+          <p className="subtitle">Cari pasien dan kirim permintaan akses ke data medis mereka</p>
         </div>
-        {/* Tombol bisa dikosongkan atau dipakai untuk reset form */}
-        <div className="header-action-placeholder"></div>
       </div>
 
       {/* 2. ALERT INFO */}
@@ -27,8 +47,8 @@ const RequestAccess = ({
         <div className="alert-icon"><Info size={20} /></div>
         <div className="alert-text">
           <p>
-            Masukkan alamat wallet pasien untuk meminta izin akses. Pasien akan menerima 
-            notifikasi dan kamu bisa mulai mengisi diagnosa setelah mereka menyetujuinya.
+            Cari pasien berdasarkan nama lengkap mereka. Setelah ditemukan, kirim permintaan akses.
+            Pasien akan menerima notifikasi untuk menyetujui atau menolak permintaan Anda.
           </p>
         </div>
       </div>
@@ -37,68 +57,87 @@ const RequestAccess = ({
         {/* FORM CARD */}
         <div className="request-card">
           <div className="card-header-simple">
-             <h3>Kirim request akses baru</h3>
+             <h3>Cari Pasien</h3>
           </div>
-          <form onSubmit={handleRequest}>
-            <div className="form-group">
-              <label>ID Pasien (Wallet Address)</label>
-              <input 
-                type="text" 
-                placeholder="0x..." 
-                value={patientAddr}
-                onChange={(e) => setPatientAddr(e.target.value)}
-                required
-                className="input-field"
-              />
-              <p className="input-hint">Pastikan alamat wallet pasien valid.</p>
-            </div>
-
-            <button 
-              type="submit" 
-              className="btn-submit" 
-              disabled={txLoading || !patientAddr}
-            >
-              <Send size={18} />
-              <span>{txLoading ? "Memproses..." : "Kirim Request"}</span>
+          <form onSubmit={handleSearch} style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+            <input 
+              type="text" 
+              placeholder="Cari nama lengkap pasien..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              required
+              className="input-field"
+            />
+            <button type="submit" className="btn-search" disabled={isSearching}>
+              {isSearching ? "..." : "Cari"}
             </button>
           </form>
+
+          {searchResults.length > 0 && (
+            <div className="search-results">
+              {searchResults.map(p => (
+                <div 
+                  key={p.id} 
+                  className={`result-item ${selectedPatient?.id === p.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedPatient(p)}
+                >
+                  <div className="res-info">
+                    <p className="res-name">{p.full_name}</p>
+                    <p className="res-sub">Username: {p.username}</p>
+                  </div>
+                  {selectedPatient?.id === p.id && <span className="selected-tag">Terpilih</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {selectedPatient && (
+            <div style={{ marginTop: '20px' }}>
+              <button 
+                onClick={() => handleRequest(selectedPatient.id)} 
+                className="btn-submit" 
+                disabled={txLoading}
+              >
+                <Send size={18} />
+                <span>{txLoading ? "Memproses..." : `Kirim Request ke ${selectedPatient.full_name}`}</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* TABEL RIWAYAT */}
        <div className="history-card">
         <div className="card-header-simple">
-          <h3>Riwayat Request Terbaru</h3>
+          <h3>Status Permintaan Anda</h3>
         </div>
         <div className="table-responsive">
           <table className="request-table">
             <thead>
               <tr>
-                <th>Informasi Pasien</th>
+                <th>Nama Pasien</th>
                 <th>Status</th>
                 <th>Waktu</th>
               </tr>
             </thead>
             <tbody>
               {/* 1. TAMPILKAN YANG SUDAH DISETUJUI */}
-  {approvedDocs.length > 0 && approvedDocs.map((req, idx) => (
-    <tr key={`app-${idx}`}>
+  {approvedDocs.length > 0 && approvedDocs.map((req) => (
+    <tr key={`app-${req.id}`}>
       <td className="info-cell">
-        <div className="patient-name">{req.name || "Pasien Terdaftar"}</div>
-        <div className="patient-addr">{req.address.substring(0, 16)}...</div>
+        <div className="patient-name">{req.name}</div>
       </td>
       <td>
         <span className="status-tag success">Disetujui</span>
       </td>
-      <td className="time-cell">Selesai</td>
+      <td className="time-cell">Aktif</td>
     </tr>
   ))}
 
   {/* 2. TAMPILKAN YANG MASIH MENUNGGU */}
-  {pendingRequests.length > 0 && pendingRequests.map((req, idx) => (
-    <tr key={`pen-${idx}`}>
+  {pendingRequests.length > 0 && pendingRequests.map((req) => (
+    <tr key={`pen-${req.id}`}>
       <td className="info-cell">
-        <div className="patient-name">{req.name || "Pasien Terdaftar"}</div>
-        <div className="patient-addr">{req.address.substring(0, 16)}...</div>
+        <div className="patient-name">{req.name}</div>
       </td>
       <td>
         <span className="status-tag waiting">Menunggu</span>
@@ -107,11 +146,10 @@ const RequestAccess = ({
     </tr>
   ))}
 
-  {rejectedRequests.length > 0 && rejectedRequests.map((req, idx) => (
-    <tr key={`rej-${idx}`}>
+  {rejectedRequests.length > 0 && rejectedRequests.map((req) => (
+    <tr key={`rej-${req.id}`}>
       <td className="info-cell">
         <div className="patient-name">{req.name}</div>
-        <div className="patient-addr">{req.address.substring(0, 16)}...</div>
       </td>
       <td>
         <span className="status-tag rejected">Ditolak</span>
@@ -231,6 +269,42 @@ const RequestAccess = ({
         }
         .btn-submit:hover { background: #1b5e20; }
         .btn-submit:disabled { background: #ccc; }
+
+        .btn-search {
+          background: #333;
+          color: white;
+          border: none;
+          padding: 0 20px;
+          border-radius: 12px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .search-results {
+          background: #f9f9f9;
+          border-radius: 12px;
+          border: 1px solid #eee;
+          max-height: 200px;
+          overflow-y: auto;
+          margin-bottom: 20px;
+        }
+
+        .result-item {
+          padding: 12px 15px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          cursor: pointer;
+          border-bottom: 1px solid #f0f0f0;
+          transition: 0.2s;
+        }
+        .result-item:last-child { border-bottom: none; }
+        .result-item:hover { background: #f0f0f0; }
+        .result-item.selected { background: #e8f5e9; border-left: 4px solid #2e7d32; }
+
+        .res-name { font-weight: 700; font-size: 14px; margin: 0; color: #333; }
+        .res-sub { font-size: 11px; color: #888; margin: 2px 0 0 0; }
+        .selected-tag { font-size: 10px; font-weight: 800; color: #2e7d32; text-transform: uppercase; }
 
         /* TABLE STYLE */
         .request-table { width: 100%; border-collapse: collapse; }

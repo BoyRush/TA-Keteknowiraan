@@ -1,211 +1,221 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from '../../components/Sidebar';
-import BerandaHerbal from './BerandaHerbal';
-import KatalogHerbal from './KatalogHerbal'; 
-import TambahHerbal from './TambahHerbal'; 
-import ProfilSaya from '../../components/ProfilSaya';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/router';
-import { ethers } from 'ethers';
-import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../../api/contract_abi';
+import axios from 'axios';
+import ProfilSaya from '../../components/ProfilSaya';
+import BerandaHerbal from './BerandaHerbal';
+import TambahHerbal from './TambahHerbal';
+import KatalogHerbal from './KatalogHerbal';
 
-export default function HerbalDoctorDashboard() {
-  const { address, role, status, loading, isAuthenticated } = useAuth();
+const EMPTY_FORM = { id: null, nama: '', indikasi: '', kontraindikasi: '', deskripsi: '' };
+
+const HerbalDashboard = () => {
+  const { username, role, isAuthenticated, loading } = useAuth();
   const router = useRouter();
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [herbalList, setHerbalList] = useState([]);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [form, setForm] = useState(EMPTY_FORM);
   const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState(null);
 
+  // Guard: hanya herbal_doctor yang boleh akses
   useEffect(() => {
     if (loading) return;
-    if (!isAuthenticated) {
+    if (!isAuthenticated || role !== 'herbal_doctor') {
       router.replace('/login');
-      return;
     }
-    if (status === 'pending_approval') {
-      router.replace('/pending-verification');
-      return;
-    }
-    if (role !== 'herbal_doctor') {
-      router.replace('/login');
-      return;
-    }
-  }, [loading, isAuthenticated, role, status, router]);
+  }, [loading, isAuthenticated, role, router]);
 
-  const [form, setForm] = useState({
-    id: null,
-    name: "",
-    indikasi: "",
-    kontraindikasi: "",
-  });
+  // Helper: tampilkan notifikasi toast
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
-  const fetchHerbalData = useCallback(async () => {
-  if (!address) return; 
-
-  console.log("🔄 [DEBUG] Memulai Fetch Data Herbal (Auto-Sync)...");
-
-  try {
-    const res = await fetch(`http://localhost:5000/herbal/all?address=${address}&t=${Date.now()}`);
-    const data = await res.json();
-
-    console.log("📥 [DEBUG] Data segar diterima:", data);
-    setHerbalList(Array.isArray(data) ? data : []);
-
-  } catch (err) {
-    console.error("❌ [DEBUG] Gagal fetch:", err);
-    setHerbalList([]);
-  } finally {
-    setIsInitialLoading(false);
-  }
-
-}, [address]); 
-  useEffect(() => {
-    if (!loading && address && role === 'herbal_doctor') {
-      console.log(" [DEBUG] Auth siap, menarik data untuk:", address);
-      fetchHerbalData();
-    }
-  }, [address, loading, role, activeTab, fetchHerbalData]);
-
-  const handleStoreHerbal = async (e) => {
-    if (e) e.preventDefault();
-    setIsSaving(true);
-    console.log("🚀 [DEBUG] Menjalankan Handle Store. Mode:", form.id ? "UPDATE" : "ADD");
-
+  // ─── FETCH: Ambil daftar herbal dari backend ───
+  const fetchHerbals = useCallback(async () => {
+    const token = localStorage.getItem('herbalchain_token');
     try {
-      const isUpdate = !!form.id;
-      const url = isUpdate
-        ? `http://localhost:5000/herbal/update/${form.id}`
-        : "http://localhost:5000/herbal/store";
-
-      const response = await fetch(url, {
-        method: isUpdate ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            ...form,
-            doctor_address: address 
-        }),
+      const res = await axios.get('http://127.0.0.1:5000/herbal/all', {
+        headers: { Authorization: `Bearer ${token}` }
       });
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Gagal ke server");
-      console.log("[DEBUG] Flask & IPFS Berhasil:", result.ipfs_cid);
-
-      if (!window.ethereum) throw new Error("MetaMask tidak ditemukan!");
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-
-      alert(`Data AI Berhasil. Konfirmasi MetaMask untuk Blockchain.`);
-      const tx = await contract.storeHerbalData(result.ipfs_cid);
-      
-      console.log("[DEBUG] Menunggu konfirmasi Blockchain...");
-      await tx.wait(); 
-
-      alert(`Berhasil! Data ${isUpdate ? "Diperbarui" : "Disimpan"}.`);
-      
-      await fetchHerbalData(); 
-      setForm({ id: null, name: "", indikasi: "", kontraindikasi: "" });
-      setActiveTab('katalog'); 
-      
-    } catch (error) {
-      console.error("❌ [DEBUG] Error saat simpan:", error);
-      const errMsg = error.message || "";
-      if (errMsg.includes("5001") || errMsg.includes("IPFS") || errMsg.includes("Failed to establish") || errMsg.includes("connection")) {
-        alert("Gagal: IPFS Daemon tidak berjalan.\n\nPastikan Anda sudah menjalankan 'ipfs daemon' di terminal dan port 5001 aktif.");
-      } else {
-        alert(`Gagal: ${errMsg}`);
+      if (res.data.status === 'success') {
+        // Sesuaikan field 'nama' agar konsisten dengan komponen
+        const normalized = res.data.herbals.map(h => ({ ...h, name: h.nama }));
+        setHerbalList(normalized);
       }
-    } finally {
-      setIsSaving(false);
+    } catch (err) {
+      console.error('Gagal ambil data herbal:', err);
     }
-  };
+  }, []);
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Hapus data dari AI dan catat di Blockchain?")) return;
+  useEffect(() => {
+    if (isAuthenticated && role === 'herbal_doctor') {
+      fetchHerbals();
+    }
+  }, [isAuthenticated, role, fetchHerbals]);
+
+  // ─── SAVE: Tambah atau Edit herbal ───
+  const handleSave = async (e) => {
+    e.preventDefault();
     setIsSaving(true);
-    console.log("🗑️ [DEBUG] Menghapus data ID:", id);
+    const token = localStorage.getItem('herbalchain_token');
+
+    const payload = {
+      nama: form.nama || form.name,
+      indikasi: form.indikasi,
+      kontraindikasi: form.kontraindikasi,
+      deskripsi: form.deskripsi
+    };
 
     try {
-      const response = await fetch(`http://localhost:5000/herbal/delete/${id}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("Gagal hapus di AI");
+      if (form.id) {
+        // Mode Edit → PUT
+        await axios.put(`http://127.0.0.1:5000/herbal/update/${form.id}`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        showToast(`✅ Data herbal berhasil diperbarui.`);
+      } else {
+        // Mode Tambah → POST
+        await axios.post('http://127.0.0.1:5000/herbal/store', payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        showToast(`✅ Herbal berhasil ditambahkan ke knowledge base AI!`);
+      }
 
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-
-      alert("Data AI terhapus. Konfirmasi MetaMask untuk Blockchain.");
-      const tx = await contract.storeHerbalData(`DELETED_${id}`);
-      await tx.wait();
-
-      alert("✅ Berhasil Dihapus Total!");
-      await fetchHerbalData(); 
-    } catch (error) {
-      console.error("❌ [DEBUG] Error saat hapus:", error);
-      alert(`Gagal Hapus: ${error.message}`);
+      setForm(EMPTY_FORM);
+      await fetchHerbals();
+      setActiveTab('katalog');
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Terjadi kesalahan saat menyimpan.';
+      showToast(`❌ ${msg}`, 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const prepareEdit = (herb) => {
-    console.log("✏️ [DEBUG] Mempersiapkan Edit untuk:", herb.nama);
+  // ─── EDIT: Isi form dengan data existing ───
+  const handleEdit = (herb) => {
     setForm({
       id: herb.id,
-      name: herb.nama,
+      nama: herb.nama || herb.name,
       indikasi: herb.indikasi,
       kontraindikasi: herb.kontraindikasi,
+      deskripsi: herb.deskripsi || ''
     });
-    
-    setActiveTab('input'); 
-    
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setActiveTab('input');
   };
 
-  if (loading || isInitialLoading) return <p style={{textAlign: 'center', padding: '100px'}}>Memverifikasi Otoritas Herbal...</p>;
+  // ─── DELETE: Soft-delete herbal ───
+  const handleDelete = async (herbalId) => {
+    if (!confirm('Yakin ingin menonaktifkan herbal ini? Data akan dihapus dari referensi AI.')) return;
+    const token = localStorage.getItem('herbalchain_token');
+    try {
+      await axios.delete(`http://127.0.0.1:5000/herbal/delete/${herbalId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      showToast('✅ Herbal berhasil dinonaktifkan.');
+      await fetchHerbals();
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Gagal menghapus data.';
+      showToast(`❌ ${msg}`, 'error');
+    }
+  };
+
+  // ─── CANCEL EDIT ───
+  const handleCancel = () => {
+    setForm(EMPTY_FORM);
+    setActiveTab('katalog');
+  };
+
+  // ─── ADD: Beralih ke tab input dengan form kosong ───
+  const handleAddClick = () => {
+    setForm(EMPTY_FORM);
+    setActiveTab('input');
+  };
 
   return (
-    <div className="layout-container">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} notifications={{ notifCount: 0 }} />
-      
+    <div className="herbal-layout">
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+
       <main className="main-content">
-        <section className="page-body">
-          {activeTab === 'dashboard' && (
-            <BerandaHerbal herbalList={herbalList} onAddClick={() => setActiveTab('input')} />
-          )}
-          
-          {activeTab === 'input' && (
-            <TambahHerbal 
-              form={form} 
-              setForm={setForm} 
-              onSave={handleStoreHerbal} 
-              isSaving={isSaving}
-              onCancel={() => {
-                setForm({ id: null, name: "", indikasi: "", kontraindikasi: "" });
-                setActiveTab('katalog');
-              }}
-            />
-          )}
+        {/* TOAST NOTIFICATION */}
+        {toast && (
+          <div className={`toast ${toast.type === 'error' ? 'toast-error' : 'toast-success'}`}>
+            {toast.msg}
+          </div>
+        )}
 
-          {activeTab === 'katalog' && (
-             <KatalogHerbal 
-                herbalList={herbalList} 
-                onEdit={prepareEdit}
-                onDelete={handleDelete}
-             />
-          )}
+        {activeTab === 'dashboard' && (
+          <BerandaHerbal
+            herbalList={herbalList}
+            onAddClick={handleAddClick}
+          />
+        )}
 
-          {activeTab === 'profil' && (
-            <ProfilSaya />
-          )}
-        </section>
+        {activeTab === 'input' && (
+          <TambahHerbal
+            form={form}
+            setForm={setForm}
+            onSave={handleSave}
+            isSaving={isSaving}
+            onCancel={handleCancel}
+          />
+        )}
+
+        {activeTab === 'katalog' && (
+          <KatalogHerbal
+            herbalList={herbalList}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+          />
+        )}
+
+        {activeTab === 'profil' && <ProfilSaya />}
       </main>
 
       <style jsx>{`
-        .layout-container { display: flex; background: #fcfcfc; min-height: 100vh; }
-        .main-content { margin-left: 260px; flex: 1; padding: 20px 40px; }
-        .page-body { margin-top: 10px; }
+        .herbal-layout {
+          display: flex;
+          min-height: 100vh;
+          background: #f8faf9;
+          font-family: 'Inter', sans-serif;
+        }
+        .main-content {
+          flex: 1;
+          margin-left: 260px;
+          padding: 35px 40px;
+          position: relative;
+        }
+        .toast {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          padding: 14px 22px;
+          border-radius: 12px;
+          font-size: 14px;
+          font-weight: 600;
+          z-index: 9999;
+          animation: slideIn 0.3s ease;
+          box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+        }
+        .toast-success {
+          background: #1b5e20;
+          color: white;
+        }
+        .toast-error {
+          background: #c62828;
+          color: white;
+        }
+        @keyframes slideIn {
+          from { opacity: 0; transform: translateY(-20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
     </div>
   );
-}
+};
+
+export default HerbalDashboard;

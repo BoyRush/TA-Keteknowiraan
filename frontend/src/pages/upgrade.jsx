@@ -25,10 +25,14 @@ export default function UpgradePage() {
         setLoading(true);
 
         try {
+            const token = localStorage.getItem('herbalchain_token');
             const res = await fetch('http://127.0.0.1:5000/sh/membership/activate-token', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ address: address, token: tokenManual })
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ token: tokenManual })
             });
             const data = await res.json();
 

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 const Sidebar = ({ activeTab, setActiveTab, dokterCount, notifications = {} }) => {
-  const { address, role, userName, logout } = useAuth();
+  const { username, role, fullName, logout } = useAuth();
   const router = useRouter();
 
   const menuConfig = {
@@ -108,13 +108,13 @@ const Sidebar = ({ activeTab, setActiveTab, dokterCount, notifications = {} }) =
       <div className="sidebar-footer">
         <div className="user-profile-link" onClick={() => setActiveTab('profil')}>
           <div className="user-avatar">
-            {userName ? userName.substring(0, 1).toUpperCase() : '??'}
+            {fullName ? fullName.substring(0, 1).toUpperCase() : (username ? username.substring(0, 1).toUpperCase() : '?')}
           </div>
           
           <div className="user-detail">
-            <span className="user-name">{userName || 'User'}</span>
+            <span className="user-name">{fullName || username || 'User'}</span>
             <span className="user-role" style={{ fontSize: '10px', opacity: 0.7 }}>
-                {address ? `${address.substring(0, 6)}...${address.substring(address.length - 4)}` : ''}
+                {username || ''}
             </span>
           </div>
         </div>

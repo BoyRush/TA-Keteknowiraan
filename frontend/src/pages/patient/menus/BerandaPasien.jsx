@@ -78,10 +78,10 @@ const BerandaPasien = ({
           <div className="list-items">
             {/* 1. Tampilkan yang Menunggu (Pending) */}
             {pendingDocs.map((doc, idx) => (
-              <div key={`pending-${idx}`} className="doc-item-row">
+              <div key={`pending-${doc.id}`} className="doc-item-row">
                 <div className="doc-main-info">
                   <p className="doc-name">{doc.name}</p>
-                  <p className="doc-sub">{doc.address.substring(0, 20)}...</p>
+                  <p className="doc-sub">Meminta izin akses</p>
                 </div>
                 <div className="status-badge-baru waiting">Menunggu</div>
               </div>
@@ -89,10 +89,10 @@ const BerandaPasien = ({
 
             {/* 2. Tampilkan yang Aktif (Approved) */}
             {approvedDocs.map((doc, idx) => (
-              <div key={`approved-${idx}`} className="doc-item-row">
+              <div key={`approved-${doc.id}`} className="doc-item-row">
                 <div className="doc-main-info">
                   <p className="doc-name">{doc.name}</p>
-                  <p className="doc-sub">{doc.address.substring(0, 20)}...</p>
+                  <p className="doc-sub">Akses aktif</p>
                 </div>
                 <div className="status-badge-baru aktif">Aktif</div>
               </div>
@@ -117,17 +117,14 @@ const BerandaPasien = ({
               <p className="empty-text">Belum ada rekam medis.</p>
             ) : (
               recentRecords.map((rec, idx) => {
-                const doctorAddr = rec.doctor || '';
-                const doctorName = approvedDocs.find(d => d.address.toLowerCase() === doctorAddr.toLowerCase())?.name;
-                const displayDoctor = doctorName || (doctorAddr ? `${doctorAddr.substring(0, 6)}...${doctorAddr.substring(doctorAddr.length - 4)}` : 'Dokter');
                 return (
-                  <div className="medical-item" key={idx}>
+                  <div className="medical-item" key={rec.id}>
                     <div className="medical-info">
                       <p className="med-title">{rec.diagnosis}</p>
-                      <p className="med-doc">oleh dr. {displayDoctor}</p>
+                      <p className="med-doc">oleh dr. {rec.doctor}</p>
                     </div>
                     <div className="record-date">
-                      {new Date(rec.timestamp * 1000).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {new Date(rec.timestamp).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </div>
                   </div>
                 );

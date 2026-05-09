@@ -24,7 +24,7 @@ const BerandaAdmin = ({ stats, pendingList, onApprove, onReject }) => {
           <div>
             <span className="label">Total Pengguna</span>
             <h2 className="value">{stats.total_pengguna}</h2>
-            <p className="sub">Aktif di Blockchain</p>
+            <p className="sub">Terdaftar di Sistem</p>
           </div>
         </div>
 

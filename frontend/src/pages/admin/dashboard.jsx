@@ -6,12 +6,11 @@ import KelolaPengguna from './KelolaPengguna';
 import ManajemenToken from './ManajemenToken';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/router';
-import { ethers } from 'ethers';
-import { CONTRACT_ADDRESS, HEALTH_RECORD_ABI } from '../../api/contract_abi';
+import axios from 'axios';
 import ProfilSaya from '../../components/ProfilSaya';
 
 export default function AdminDashboard() {
-  const { address, role, loading: authLoading, isAuthenticated } = useAuth();
+  const { id, username, role, loading: authLoading, isAuthenticated } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('dashboard');
   
@@ -35,17 +34,19 @@ export default function AdminDashboard() {
 
   const fetchAdminStats = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:5000/admin/dashboard/stats");
-      const data = await res.json();
+      const token = localStorage.getItem('herbalchain_token');
+      const res = await axios.get("http://127.0.0.1:5000/admin/dashboard/stats", {
+          headers: { Authorization: `Bearer ${token}` }
+      });
       
-      if (data.status === "success") {
+      if (res.data.status === "success") {
         setAdminData({
-          stats: data.stats,
-          pending_registrations: data.pending_registrations
+          stats: res.data.stats,
+          pending_registrations: res.data.pending_registrations
         });
       }
     } catch (err) {
-      console.error("❌ Gagal tarik data Blockchain:", err);
+      console.error("❌ Gagal tarik data:", err);
     } finally {
       setIsLoading(false);
     }
@@ -57,57 +58,39 @@ export default function AdminDashboard() {
     }
   }, [authLoading, role, activeTab, fetchAdminStats]);
 
-  const handleApprove = async (targetAddr, name) => {
+  const handleApprove = async (targetUserId, name) => {
     try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-
       console.log(`⏳ Memproses Approve untuk ${name}...`);
-      const tx = await contract.approveDoctor(targetAddr);
-      await tx.wait(); 
-
-      const res = await fetch("http://127.0.0.1:5000/admin/verify/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: targetAddr })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Gagal update database");
-
+      const token = localStorage.getItem('herbalchain_token');
+      await axios.post("http://127.0.0.1:5000/admin/verify/approve", 
+        { user_id: targetUserId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
       alert(`Berhasil! Pendaftaran akun dr. ${name} telah disetujui.`);
       fetchAdminStats(); 
     } catch (error) {
-      alert("Gagal Approve: " + (error.data?.message || error.message));
+      alert("Gagal Approve: " + (error.response?.data?.error || error.message));
     }
   };
 
-  const handleReject = async (targetAddr, name, reason) => {
+  const handleReject = async (targetUserId, name, reason) => {
     try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, HEALTH_RECORD_ABI, signer);
-
       console.log(`⏳ Memproses Reject untuk ${name}...`);
-      const tx = await contract.rejectDoctor(targetAddr);
-      await tx.wait();
-
-      const res = await fetch("http://127.0.0.1:5000/admin/verify/reject", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: targetAddr, reason: reason })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Gagal update database");
+      const token = localStorage.getItem('herbalchain_token');
+      await axios.post("http://127.0.0.1:5000/admin/verify/reject", 
+        { user_id: targetUserId, reason: reason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
       alert(`❌ Pendaftaran dr. ${name} telah ditolak.`);
       fetchAdminStats(); 
     } catch (error) {
-      alert("Gagal Reject: " + (error.data?.message || error.message));
+      alert("Gagal Reject: " + (error.response?.data?.error || error.message));
     }
   };
 
-  if (authLoading || isLoading) return <div className="loading">Memuat Data Blockchain...</div>;
+  if (authLoading || isLoading) return <div className="loading">Memuat Data Dashboard...</div>;
 
   return (
     <div className="admin-layout">

@@ -19,19 +19,19 @@ const AksesDokter = ({ pendingDocs = [], approvedDocs = [], onGrant, onReject, o
             <div key={idx} className="doc-item pending">
               <div className="doc-main-info">
                 <p className="doc-name">{doc.name}</p>
-                <p className="doc-sub">{doc.address.substring(0, 20)}...</p>
+                <p className="doc-sub">Dokter ini meminta izin akses</p>
               </div>
               <div className="action-btns">
                 <button 
                   className="btn-tolak" 
-                  onClick={() => onReject(doc.address, doc.name)}
+                  onClick={() => onReject(doc.id, doc.name)}
                   disabled={isProcessing}
                 >
                   Tolak
                 </button>
                 <button 
                   className="btn-setujui" 
-                  onClick={() => onGrant(doc.address)}
+                  onClick={() => onGrant(doc.id)}
                   disabled={isProcessing}
                 >
                   {isProcessing ? "..." : "Setujui"}
@@ -55,13 +55,13 @@ const AksesDokter = ({ pendingDocs = [], approvedDocs = [], onGrant, onReject, o
                     <p className="doc-name">{doc.name}</p>
                     <span className="status-badge aktif">Aktif</span>
                 </div>
-                <code className="doc-sub">{doc.address.substring(0, 25)}...</code>
+                <p className="doc-sub">Memiliki akses ke rekam medis Anda</p>
               </div>
               <button 
                 className="btn-revoke-red" 
                 onClick={() => {
                     if(window.confirm(`Cabut izin akses untuk ${doc.name}?`)) {
-                        onRevoke(doc.address, doc.name);
+                        onRevoke(doc.id, doc.name);
                     }
                 }}
                 disabled={isProcessing}

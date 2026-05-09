@@ -56,8 +56,8 @@ const BerandaDokter = ({
             <span className="link" onClick={() => changeTab('list')}>Lihat semua →</span>
           </div>
           <div className="list-items">
-            {activePatients.length > 0 ? activePatients.map((p, idx) => (
-              <div key={idx} className="item-row">
+            {activePatients.length > 0 ? activePatients.map((p) => (
+              <div key={p.id} className="item-row">
                 <div className="avatar">{p.name?.substring(0, 2).toUpperCase()}</div>
                 <div className="item-info">
                   <p className="item-title">{p.name}</p>
@@ -76,14 +76,14 @@ const BerandaDokter = ({
             <span className="link" onClick={() => changeTab('request')}>Kelola →</span>
           </div>
           <div className="list-items">
-            {recentRequests.length > 0 ? recentRequests.map((r, idx) => (
-              <div key={idx} className="item-row">
+            {recentRequests.length > 0 ? recentRequests.map((r) => (
+              <div key={r.id} className="item-row">
                 <div className="avatar gray">{r.name?.substring(0, 2).toUpperCase()}</div>
                 <div className="item-info">
                   <p className="item-title">{r.name}</p>
                   <p className="item-sub">Dikirim {r.date}</p>
                 </div>
-                <span className={`badge-status ${r.status.toLowerCase()}`}>
+                <span className={`badge-status ${r.status === 'Aktif' ? 'aktif' : r.status === 'Menunggu' ? 'menunggu' : 'ditolak'}`}>
                   {r.status}
                 </span>
               </div>

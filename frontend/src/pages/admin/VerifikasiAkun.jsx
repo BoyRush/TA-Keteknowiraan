@@ -6,8 +6,8 @@ const VerifikasiAkun = ({ pendingList, onApprove, onReject }) => {
   const [isRejecting, setIsRejecting] = useState(null); 
   const [rejectReason, setRejectReason] = useState("");
 
-  const handlePreview = (address, name) => {
-    setSelectedDoc({ address, name });
+  const handlePreview = (id, name) => {
+    setSelectedDoc({ id, name });
   };
 
   const closePreview = () => setSelectedDoc(null);
@@ -46,9 +46,8 @@ const VerifikasiAkun = ({ pendingList, onApprove, onReject }) => {
               <button onClick={closePreview} className="close-btn"><X size={20} /></button>
             </div>
             <div className="modal-body doc-preview">
-              {/* Gunakan iframe untuk PDF atau img untuk Gambar. */}
               <iframe 
-                src={`http://127.0.0.1:5000/admin/view-document/${selectedDoc.address}`} 
+                src={`http://127.0.0.1:5000/admin/view-document/${selectedDoc.id}?token=${localStorage.getItem('herbalchain_token')}`} 
                 width="100%" 
                 height="500px" 
                 style={{ border: 'none', borderRadius: '8px' }}
@@ -92,8 +91,8 @@ const VerifikasiAkun = ({ pendingList, onApprove, onReject }) => {
 
         {pendingList.length > 0 ? (
           <div className="pending-list">
-            {pendingList.map((user, idx) => (
-              <div key={user.id || idx} className="pending-item">
+            {pendingList.map((user) => (
+              <div key={user.id} className="pending-item">
                 {/* Top Row: Avatar + Info + Status Badge */}
                 <div className="item-top">
                   <div className="avatar-circle">

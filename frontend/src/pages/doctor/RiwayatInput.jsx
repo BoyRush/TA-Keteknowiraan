@@ -1,16 +1,7 @@
 import React from 'react';
 
 const RiwayatInput = ({ patientsHistory, onEdit, onDelete, txLoading }) => {
-  const allRecords = patientsHistory.flatMap(p => 
-    (p.medicalRecords || [])
-      .map((rec, i) => ({ 
-        ...rec, 
-        patientName: p.name || "Pasien", 
-        patientAddress: p.address,
-        blockchainIndex: (rec.index !== undefined && rec.index !== null) ? rec.index : i,
-        dateObj: typeof rec.timestamp === 'string' ? new Date(rec.timestamp) : new Date(rec.timestamp * 1000)
-      }))
-  ).sort((a, b) => b.dateObj - a.dateObj); 
+  const allRecords = [...patientsHistory].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); 
 
   return (
     <div className="menu-wrapper">
@@ -33,47 +24,40 @@ const RiwayatInput = ({ patientsHistory, onEdit, onDelete, txLoading }) => {
             </thead>
             <tbody>
               {allRecords.length > 0 ? allRecords.map((rec, idx) => (
-                <tr key={idx} className={!rec.isActive ? 'row-disabled' : ''}>
+                <tr key={idx}>
                   <td>
                     <div className="p-name">{rec.patientName}</div>
-                    <div className="p-addr">{rec.patientAddress.substring(0, 10)}...</div>
+                    <div className="p-addr">ID: {rec.patientId}</div>
                   </td>
                   <td>
                     <p className="p-diag">{rec.diagnosis}</p>
                   </td>
                   <td>
                     <div className="p-date">
-                      {rec.dateObj.toLocaleDateString('id-ID')}
-                    </div>
-                    <div className="p-time">
-                      {rec.dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                      {rec.date}
                     </div>
                   </td>
                   <td>
-                    <span className={`status-badge ${rec.isActive ? 'active' : 'inactive'}`}>
-                      {rec.isActive ? 'Aktif' : 'Nonaktif'}
+                    <span className="status-badge active">
+                      Aktif
                     </span>
                   </td>
                   <td>
                     <div className="action-group">
-                      {rec.isActive && (
-                        <>
-                          <button 
-                            className="btn-edit" 
-                            onClick={() => onEdit(rec)}
-                            disabled={txLoading}
-                          >
-                            Edit
-                          </button>
-                          <button 
-                            className="btn-delete" 
-                            onClick={() => onDelete(rec.patientAddress, rec.blockchainIndex, rec.cid)}
-                            disabled={txLoading}
-                          >
-                            Nonaktifkan
-                          </button>
-                        </>
-                      )}
+                      <button 
+                        className="btn-edit" 
+                        onClick={() => onEdit && onEdit(rec)}
+                        disabled={txLoading}
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        className="btn-delete" 
+                        onClick={() => onDelete && onDelete(rec.id)}
+                        disabled={txLoading}
+                      >
+                        Nonaktifkan
+                      </button>
                     </div>
                   </td>
                 </tr>
