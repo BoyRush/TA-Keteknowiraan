@@ -42,8 +42,9 @@ const HerbalDashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.status === 'success') {
-        // Sesuaikan field 'nama' agar konsisten dengan komponen
-        const normalized = res.data.herbals.map(h => ({ ...h, name: h.nama }));
+        const rawHerbals = Array.isArray(res.data.herbals) ? res.data.herbals : [];
+        // Normalisasi: pastikan field 'nama' & 'name' konsisten
+        const normalized = rawHerbals.map(h => ({ ...h, name: h.nama || h.name || '' }));
         setHerbalList(normalized);
       }
     } catch (err) {
@@ -64,11 +65,17 @@ const HerbalDashboard = () => {
     const token = localStorage.getItem('herbalchain_token');
 
     const payload = {
-      nama: form.nama || form.name,
-      indikasi: form.indikasi,
-      kontraindikasi: form.kontraindikasi,
-      deskripsi: form.deskripsi
+      nama: form.nama || form.name || '',
+      indikasi: form.indikasi || '',
+      kontraindikasi: form.kontraindikasi || '',
+      deskripsi: form.deskripsi || ''
     };
+
+    if (!payload.nama || !payload.indikasi || !payload.kontraindikasi) {
+      showToast('❌ Nama, Indikasi, dan Kontraindikasi wajib diisi!', 'error');
+      setIsSaving(false);
+      return;
+    }
 
     try {
       if (form.id) {
@@ -100,9 +107,9 @@ const HerbalDashboard = () => {
   const handleEdit = (herb) => {
     setForm({
       id: herb.id,
-      nama: herb.nama || herb.name,
-      indikasi: herb.indikasi,
-      kontraindikasi: herb.kontraindikasi,
+      nama: herb.nama || herb.name || '',
+      indikasi: herb.indikasi || '',
+      kontraindikasi: herb.kontraindikasi || '',
       deskripsi: herb.deskripsi || ''
     });
     setActiveTab('input');

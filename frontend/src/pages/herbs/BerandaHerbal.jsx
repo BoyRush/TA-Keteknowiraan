@@ -1,7 +1,7 @@
 import React from 'react';
 import { Flower2, Plus, ArrowRight, Database } from 'lucide-react';
 
-const BerandaHerbal = ({ herbalList, onAddClick }) => {
+const BerandaHerbal = ({ herbalList = [], onAddClick }) => {
   const recentActivity = [...herbalList].slice(0, 5);
 
   return (

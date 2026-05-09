@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 from chroma.herbal_store import add_herbal, update_herbal, delete_herbal, search_herbal, embedding_functions
 from rules.medical_rules import filter_herbs_by_medical_condition
 from services.llm_generator import generate_herbal_recommendation
+from services.herbal_retriever import retrieve_relevant_herbs
 
 load_dotenv()
 
@@ -1109,23 +1110,16 @@ def search_herbal_api():
                 if r['diagnosis']:
                     medical_conditions.append(r['diagnosis'].lower())
 
-        # PROSES AI
+        # PROSES AI — RAG Pipeline (sesuai implementation plan)
         if use_rag:
-            # Semantic Search via ChromaDB
-            result = search_herbal(query)
-            herbs = []
-            if result["documents"] and result["documents"][0]:
-                for i in range(len(result["documents"][0])):
-                    herbs.append({
-                        "name": result["metadatas"][0][i].get("name"),
-                        "indikasi": result["metadatas"][0][i].get("indikasi"),
-                        "kontraindikasi": result["metadatas"][0][i].get("kontraindikasi"),
-                        "deskripsi": result["documents"][0][i]
-                    })
-            
+            # STEP 1: Semantic Search via ChromaDB + Distance Filter
+            # retrieve_relevant_herbs() membuang hasil dengan jarak > 0.4 (tidak relevan)
+            herbs = retrieve_relevant_herbs(query, k=3)
+            print(f"📦 Herbal ditemukan setelah distance filter: {len(herbs)}")
+
             if not herbs:
                 llm_output = {
-                    "mode": "RAG (Database Kosong)",
+                    "mode": "RAG (Database Kosong / Tidak Relevan)",
                     "rekomendasi": [{
                         "nama": "Informasi",
                         "alasan": f"Maaf, tidak ada data herbal di database pakar yang relevan dengan keluhan '{query}'.",
@@ -1133,19 +1127,49 @@ def search_herbal_api():
                     }]
                 }
             else:
-                llm_input = {
-                    "mode": "RAG (Terverifikasi Database)",
-                    "patient_context": {"keluhan": query, "kondisi_medis": medical_conditions},
-                    "safe_herbs": herbs 
-                }
-                llm_output = generate_herbal_recommendation(llm_input)
-                if isinstance(llm_output, dict):
-                    llm_output["mode"] = llm_input["mode"]
+                # STEP 2: Safety Filter — Buang herbal yang kontraindikasi
+                # dengan riwayat medis pasien (filter_herbs_by_medical_condition)
+                safe_herbs = filter_herbs_by_medical_condition(herbs, medical_conditions, query)
+                print(f"🛡️ Herbal lolos safety filter: {len(safe_herbs)} dari {len(herbs)}")
+
+                if not safe_herbs:
+                    llm_output = {
+                        "mode": "RAG (Safety Filter Aktif)",
+                        "rekomendasi": [{
+                            "nama": "Peringatan Keamanan",
+                            "alasan": (
+                                f"Semua herbal yang relevan dengan keluhan '{query}' diblokir oleh sistem keamanan "
+                                "karena berpotensi berbahaya berdasarkan riwayat medis Anda. "
+                                "Silakan konsultasikan dengan dokter Anda."
+                            ),
+                            "status": "danger"
+                        }]
+                    }
+                else:
+                    # STEP 3: Kirim ke LLM (Remote GPU via Ngrok)
+                    # Normalisasi field: ChromaDB metadata pakai 'nama', bukan 'name'
+                    llm_input = {
+                        "mode": "RAG (Terverifikasi Database)",
+                        "patient_context": {"keluhan": query, "kondisi_medis": medical_conditions},
+                        "safe_herbs": [
+                            {
+                                "nama": h.get("nama") or h.get("name", ""),
+                                "indikasi": h.get("indikasi", ""),
+                                "kontraindikasi": h.get("kontraindikasi", ""),
+                                "deskripsi": h.get("deskripsi", "")
+                            }
+                            for h in safe_herbs
+                        ]
+                    }
+                    llm_output = generate_herbal_recommendation(llm_input)
+                    if isinstance(llm_output, dict):
+                        llm_output["mode"] = llm_input["mode"]
         else:
+            # Mode Non-RAG: LLM pakai pengetahuan umum tanpa database herbal
             llm_input = {
                 "mode": "Non-RAG (Pengetahuan Umum AI)",
                 "patient_context": {"keluhan": query, "kondisi_medis": medical_conditions},
-                "safe_herbs": [] 
+                "safe_herbs": []
             }
             llm_output = generate_herbal_recommendation(llm_input)
             if isinstance(llm_output, dict):

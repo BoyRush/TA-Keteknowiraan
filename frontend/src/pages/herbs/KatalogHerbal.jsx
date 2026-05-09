@@ -1,7 +1,7 @@
 import React from 'react';
 import { PencilLine, Trash2, Flower2, Search } from 'lucide-react';
 
-const KatalogHerbal = ({ herbalList, onEdit, onDelete }) => {
+const KatalogHerbal = ({ herbalList = [], onEdit, onDelete }) => {
   return (
     <div className="katalog-container">
       <div className="header-section">
@@ -32,7 +32,7 @@ const KatalogHerbal = ({ herbalList, onEdit, onDelete }) => {
                       </div>
                       <div>
                         <div className="h-name">{herb.nama}</div>
-                        <div className="h-id">ID: {herb.id?.substring(0, 8)}...</div>
+                        <div className="h-id">ID: #{String(herb.id)}</div>
                       </div>
                     </div>
                   </td>
