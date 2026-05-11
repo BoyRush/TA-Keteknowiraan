@@ -1,1 +1,23 @@
-﻿Flask-JWT-Extended
+# ============================================
+# SmartHerbal Backend - Python Dependencies
+# ============================================
+
+# Core Web Framework
+Flask==3.0.3
+Flask-CORS==4.0.1
+Flask-JWT-Extended==4.6.0
+Werkzeug==3.0.3
+
+# Database
+mysql-connector-python==8.4.0
+
+# Environment
+python-dotenv==1.0.1
+
+# Vector Store (RAG)
+chromadb==0.5.3
+sentence-transformers==3.0.1
+
+# AI - Google Gemini API (Google AI Studio - Free Tier)
+# CATATAN: Gunakan 'google-genai', BUKAN 'google-generativeai' (sudah deprecated 2025)
+google-genai>=1.0.0
