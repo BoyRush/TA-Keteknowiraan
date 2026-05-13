@@ -11,7 +11,7 @@ export default function LoginPage() {
 
     const [toast, setToast] = useState(null);
     const [popup, setPopup] = useState(null);
-    const [inlineError, setInlineError] = useState("");
+    const [inlineErrors, setInlineErrors] = useState({});
 
     const showToast = (message, type = "success") => {
         setToast({ message, type });
@@ -20,9 +20,16 @@ export default function LoginPage() {
 
     const handleLogin = async (e) => {
         e.preventDefault();
-        setInlineError(""); 
-        if (!username) return setInlineError("Username tidak boleh kosong!");
-        if (!password) return setInlineError("Password tidak boleh kosong!");
+        setInlineErrors({}); 
+
+        let errs = {};
+        if (!username) errs.username = "Username tidak boleh kosong!";
+        if (!password) errs.password = "Password tidak boleh kosong!";
+
+        if (Object.keys(errs).length > 0) {
+            setInlineErrors(errs);
+            return;
+        }
 
         setLoading(true);
         try {
@@ -31,7 +38,7 @@ export default function LoginPage() {
             if (result.success) {
                 showToast("Login Berhasil", "success");
             } else {
-                setInlineError(result.error || "Login gagal. Cek kembali username/password.");
+                setInlineErrors({ api: result.error || "Login gagal. Cek kembali username/password." });
             }
         } catch (error) {
             showToast("Terjadi kesalahan sistem", "error");
@@ -61,17 +68,24 @@ export default function LoginPage() {
                             value={username}
                             onChange={(e) => {
                                 setUsername(e.target.value);
-                                if (inlineError) setInlineError(""); 
+                                if (inlineErrors.username || inlineErrors.api) {
+                                    setInlineErrors(prev => ({ ...prev, username: "", api: "" }));
+                                }
                             }}
                             style={{ 
                                 width: '100%', 
                                 padding: '12px', 
                                 borderRadius: '8px', 
-                                border: '1px solid #cbd5e0', 
+                                border: `1px solid ${inlineErrors.username ? '#e53e3e' : '#cbd5e0'}`, 
                                 outline: 'none' 
                             }}
                             placeholder="Masukkan username Anda"
                         />
+                        {inlineErrors.username && (
+                            <p style={{ color: '#e53e3e', fontSize: '0.8rem', marginTop: '6px', marginBottom: 0 }}>
+                                ⚠️ {inlineErrors.username}
+                            </p>
+                        )}
                     </div>
                     
                     <div style={{ marginBottom: '20px' }}>
@@ -81,20 +95,22 @@ export default function LoginPage() {
                             value={password}
                             onChange={(e) => {
                                 setPassword(e.target.value);
-                                if (inlineError) setInlineError(""); 
+                                if (inlineErrors.password || inlineErrors.api) {
+                                    setInlineErrors(prev => ({ ...prev, password: "", api: "" }));
+                                }
                             }}
                             style={{ 
                                 width: '100%', 
                                 padding: '12px', 
                                 borderRadius: '8px', 
-                                border: `1px solid ${inlineError ? '#e53e3e' : '#cbd5e0'}`, 
+                                border: `1px solid ${inlineErrors.password || inlineErrors.api ? '#e53e3e' : '#cbd5e0'}`, 
                                 outline: 'none' 
                             }}
                             placeholder="Masukkan password Anda"
                         />
-                        {inlineError && (
+                        {(inlineErrors.password || inlineErrors.api) && (
                             <p style={{ color: '#e53e3e', fontSize: '0.8rem', marginTop: '6px', marginBottom: 0 }}>
-                                ⚠️ {inlineError}
+                                ⚠️ {inlineErrors.password || inlineErrors.api}
                             </p>
                         )}
                     </div>
