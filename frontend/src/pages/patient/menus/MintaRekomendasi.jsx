@@ -15,6 +15,7 @@ const MintaRekomendasi = ({
 }) => {
   const { membership } = useAuth();
   const isPremium = membership?.tier === 'premium';
+  const isBasicEmpty = membership && !isPremium && (membership.quotaLimit - membership.quotaUsed) <= 0;
 
   return (
     <div className="menu-container">
@@ -51,7 +52,7 @@ const MintaRekomendasi = ({
         <button 
           className="btn-generate" 
           onClick={handleGetAIRecommendation}
-          disabled={isRecommending || !keluhan}
+          disabled={isRecommending || !keluhan || isBasicEmpty}
         >
           {isRecommending ? "Sedang Menganalisis..." : "Dapatkan Rekomendasi Herbal"}
         </button>
@@ -73,17 +74,9 @@ const MintaRekomendasi = ({
                   </div>
                   
                   <div style={{ position: 'relative' }}>
-                      <p className={`herb-reason ${!isPremium ? 'blurred' : ''}`}>
+                      <p className="herb-reason">
                         {item.alasan}
                       </p>
-                      
-                      {!isPremium && (
-                          <div className="lock-overlay">
-                              <Lock size={20} color="#B45309" style={{ marginBottom: '8px' }} />
-                              <div style={{ fontSize: '13px', fontWeight: 600, color: '#B45309' }}>Konten Premium Terkunci</div>
-                              <div style={{ fontSize: '11px', color: '#92400E', marginTop: '4px' }}>Upgrade untuk melihat dosis & detail</div>
-                          </div>
-                      )}
                   </div>
                 </div>
               ))
