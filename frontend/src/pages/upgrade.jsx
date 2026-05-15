@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { useAuth } from '../context/AuthContext';
-import { QrCode, MessageCircle, Key, CheckCircle } from 'lucide-react';
+import { ArrowLeft, QrCode, MessageCircle, Key, CheckCircle } from 'lucide-react';
 
 export default function UpgradePage() {
     const { address, membership, refreshMembership } = useAuth();
@@ -60,7 +60,13 @@ export default function UpgradePage() {
                 <title>Upgrade Premium - SmartHerbal</title>
             </Head>
 
-            <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+            <div style={{ maxWidth: '800px', margin: '0 auto', position: 'relative' }}>
+                <button 
+                    onClick={() => router.back()}
+                    style={{ position: 'absolute', top: '5px', left: '0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', color: '#4B5563', fontWeight: 600 }}
+                >
+                    <ArrowLeft size={20} />
+                </button>
                 <div style={{ textAlign: 'center', marginBottom: '40px' }}>
                     <h1 style={{ fontSize: '32px', fontWeight: 800, color: '#111827', marginBottom: '16px' }}>
                         Tingkatkan Pengalaman Sehat Anda
@@ -92,8 +98,8 @@ export default function UpgradePage() {
                         <ul style={{ listStyle: 'none', padding: 0, margin: 0, flex: 1 }}>
                             <li style={{ padding: '12px 0', borderBottom: '1px solid #F3F4F6', color: '#4B5563' }}>✅ Maksimal 3x Rekomendasi</li>
                             <li style={{ padding: '12px 0', borderBottom: '1px solid #F3F4F6', color: '#4B5563' }}>✅ Riwayat Tersimpan</li>
+                            <li style={{ padding: '12px 0', color: '#9CA3AF' }}>❌ Riwayat Terkunci</li>
                             <li style={{ padding: '12px 0', borderBottom: '1px solid #F3F4F6', color: '#9CA3AF' }}>❌ Detail Kandungan Terkunci</li>
-                            <li style={{ padding: '12px 0', color: '#9CA3AF' }}>❌ Tanpa Konsultasi</li>
                         </ul>
                         
                         <button disabled style={{ marginTop: '24px', width: '100%', padding: '14px', borderRadius: '8px', border: '1px solid #E5E7EB', backgroundColor: '#F9FAFB', color: '#9CA3AF', fontWeight: 600 }}>

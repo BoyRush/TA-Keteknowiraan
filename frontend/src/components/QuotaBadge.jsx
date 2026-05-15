@@ -36,7 +36,7 @@ export default function QuotaBadge() {
                 <span style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {isPremium ? '✨ Premium Aktif' : '🌿 Basic Plan'}
                 </span>
-                {!isPremium && <span style={{ fontSize: '12px', fontWeight: 500 }}>{remaining}/{membership.quotaLimit}</span>}
+                {!isPremium && <span style={{ fontSize: '12px', fontWeight: 500 }}>{isBasicEmpty ? 'Habis' : `${membership.quotaUsed}/${membership.quotaLimit}`}</span>}
             </div>
             
             {!isPremium ? (
