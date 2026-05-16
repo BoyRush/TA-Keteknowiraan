@@ -17,6 +17,14 @@ from flask_jwt_extended import (
 from werkzeug.security import generate_password_hash, check_password_hash
 import mysql.connector
 from dotenv import load_dotenv
+load_dotenv()
+
+# ==========================================
+# KONFIGURASI GEMINI API KEY
+# ==========================================
+# API Key diletakkan di sini agar Anda bisa mengubahnya dengan mudah
+# dan server Flask akan otomatis merestart (auto-reload) saat file ini disimpan.
+os.environ["GEMINI_API_KEY"] = "AIzaSyChJxKimo3L0-Fj57EGCrryrUobfac2lgY"
 
 # Existing Chroma & AI logic (adapted to not use IPFS/Web3)
 from chroma.herbal_store import add_herbal, update_herbal, delete_herbal, search_herbal, embedding_functions
@@ -30,7 +38,7 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 # Konfigurasi JWT
-app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-key-herbalchain")
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secure-jwt-secret-key-2026-smartherbal-ai-system-long")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=24)
 app.config["JWT_TOKEN_LOCATION"] = ["headers", "query_string"]
 app.config["JWT_QUERY_STRING_NAME"] = "token"
@@ -42,7 +50,7 @@ def get_db_connection():
     return mysql.connector.connect(
         host="localhost",
         user="root",
-        password="", 
+        password="root", 
         database="smartherbal_db",
         port=3306,
         collation="utf8mb4_general_ci"
@@ -1142,6 +1150,44 @@ def herbal_delete(herbal_id):
 @jwt_required()
 def search_herbal_api():
     query = request.args.get("q")
+    medical_raw = request.args.get("medical", "")
+
+    if not query:
+        return jsonify({"error": "query kosong"}), 400
+
+    medical_conditions = [
+        m.strip().lower()
+        for m in medical_raw.split(",")
+        if m
+    ]
+
+    result = search_herbal(query)
+
+    herbs = []
+    if result["documents"] and result["documents"][0]:
+        for i in range(len(result["documents"][0])):
+            herbs.append({
+                "id": result["ids"][0][i],
+                "name": result["metadatas"][0][i].get("nama") or result["metadatas"][0][i].get("name", ""),
+                "indikasi": result["metadatas"][0][i].get("indikasi", ""),
+                "kontraindikasi": result["metadatas"][0][i].get("kontraindikasi", ""),
+                "deskripsi": result["metadatas"][0][i].get("deskripsi", ""),
+                "score": result["distances"][0][i]
+            })
+
+    if medical_conditions:
+        herbs = filter_herbs_by_medical_condition(herbs, medical_conditions, query)
+
+    return jsonify({
+        "query": query,
+        "medical_conditions": medical_conditions,
+        "results": herbs
+    })
+
+@app.route("/herbal/recommendation-input", methods=["GET"])
+@jwt_required()
+def recommendation_input():
+    query = request.args.get("q")
     use_rag = request.args.get("useRag", "true").lower() == "true"
     current_user = json.loads(get_jwt_identity())
 
@@ -1218,43 +1264,26 @@ def search_herbal_api():
                     }]
                 }
             else:
-                # STEP 2: Safety Filter — Buang herbal yang kontraindikasi
-                # dengan riwayat medis pasien (filter_herbs_by_medical_condition)
-                safe_herbs = filter_herbs_by_medical_condition(herbs, medical_conditions, query)
-                print(f"🛡️ Herbal lolos safety filter: {len(safe_herbs)} dari {len(herbs)}")
-
-                if not safe_herbs:
-                    llm_output = {
-                        "mode": "RAG (Safety Filter Aktif)",
-                        "rekomendasi": [{
-                            "nama": "Peringatan Keamanan",
-                            "alasan": (
-                                f"Semua herbal yang relevan dengan keluhan '{query}' diblokir oleh sistem keamanan "
-                                "karena berpotensi berbahaya berdasarkan riwayat medis Anda. "
-                                "Silakan konsultasikan dengan dokter Anda."
-                            ),
-                            "status": "danger"
-                        }]
-                    }
-                else:
-                    # STEP 3: Kirim ke LLM (Remote GPU via Ngrok)
-                    # Normalisasi field: ChromaDB metadata pakai 'nama', bukan 'name'
-                    llm_input = {
-                        "mode": "RAG (Terverifikasi Database)",
-                        "patient_context": {"keluhan": query, "kondisi_medis": medical_conditions},
-                        "safe_herbs": [
-                            {
-                                "nama": h.get("nama") or h.get("name", ""),
-                                "indikasi": h.get("indikasi", ""),
-                                "kontraindikasi": h.get("kontraindikasi", ""),
-                                "deskripsi": h.get("deskripsi", "")
-                            }
-                            for h in safe_herbs
-                        ]
-                    }
-                    llm_output = generate_herbal_recommendation(llm_input)
-                    if isinstance(llm_output, dict):
-                        llm_output["mode"] = llm_input["mode"]
+                # STEP 2: Kirim ke LLM (Remote GPU via Ngrok)
+                # Normalisasi field: ChromaDB metadata pakai 'nama', bukan 'name'
+                from services.llm_generator import generate_herbal_recommendation
+                llm_input = {
+                    "mode": "RAG (Terverifikasi Database)",
+                    "patient_context": {"keluhan": query, "kondisi_medis": medical_conditions},
+                    "safe_herbs": [
+                        {
+                            "nama": h.get("nama") or h.get("name", ""),
+                            "indikasi": h.get("indikasi", ""),
+                            "kontraindikasi": h.get("kontraindikasi", ""),
+                            "deskripsi": h.get("deskripsi", ""),
+                            "id": h.get("id")
+                        }
+                        for h in herbs
+                    ]
+                }
+                llm_output = generate_herbal_recommendation(llm_input)
+                if isinstance(llm_output, dict):
+                    llm_output["mode"] = llm_input["mode"]
         else:
             # Mode Non-RAG: LLM pakai pengetahuan umum tanpa database herbal
             llm_input = {

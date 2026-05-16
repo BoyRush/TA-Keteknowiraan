@@ -47,62 +47,66 @@ Jawab hanya YA atau TIDAK. Jangan tambahkan penjelasan apapun."""
 # =========================================================
 EVALUATE_HERB_PROMPT = """Anda adalah Dokter Spesialis Fitofarmaka (Herbal Medis).
 
-TUGAS: Lakukan validasi kelayakan herbal bagi pasien secara objektif.
+TUGAS: Tentukan apakah herbal boleh digunakan untuk pasien.
 
-KONTEKS:
-- Keluhan Pasien: {keluhan}
-- Keyword Medis: {keyword_str}
-- Riwayat Medis: {riwayat_str}
+DATA PASIEN:
+Keluhan: {keluhan}
+Keyword Medis: {keyword_str}
+Riwayat Medis: {riwayat_str}
 
 DATA HERBAL:
-- Nama: {nama}
-- Indikasi: {indikasi}
-- Kontraindikasi: {kontra}
+Nama: {nama}
+Indikasi: {indikasi}
+Kontraindikasi: {kontra}
 
-PANDUAN EVALUASI:
-1. VALIDASI KEAMANAN: Periksa apakah Riwayat Medis pasien tercantum secara langsung atau memiliki sinonim klinis dalam daftar Kontraindikasi. Jika ada larangan langsung bagi kondisi riwayat medis pasien, keputusan adalah TIDAK. Jika tidak ada hubungan langsung, anggap AMAN.
-2. VALIDASI MANFAAT: Analisis apakah Indikasi herbal dapat meredakan Keluhan atau Keyword Medis pasien. 
-3. KEPUTUSAN: Berikan YA jika herbal secara medis AMAN bagi riwayat pasien dan RELEVAN bagi keluhannya. Berikan TIDAK hanya jika ada resiko bahaya nyata atau ketidaksesuaian manfaat yang besar.
+ATURAN WAJIB:
+1. HUBUNGAN GEJALA: Jika keluhan pasien secara klinis adalah ciri utama dari indikasi herbal, maka nyatakan YA. Jangan menolak hanya karena kata penyakit (misal 'Diabetes') tidak tertulis eksplisit.
+2. DATA TIDAK ADA = AMAN: Jika Riwayat Medis atau Umur tidak disebutkan, anggap pasien TIDAK memiliki kontraindikasi tersebut. JANGAN mencari-cari alasan dari data yang tidak ada.
+3. PRIORITAS RELEVANSI: Jika INDIKASI herbal tidak ada hubungannya dengan KELUHAN pasien, langsung Keputusan: TIDAK (Analisis: Tidak relevan).
+4. Jika KONTRAINDIKASI cocok dengan kondisi pasien (termasuk umur seperti "anak-anak", "lansia", dll) → Keputusan: TIDAK
+5. Amati angka medis dalam keluhan (tensi/gula). Gunakan standar medis umum.
+6. Hanya tolak (TIDAK) jika kondisi pasien secara EKSPLISIT cocok dengan kontraindikasi.
+7. JANGAN berasumsi pasien sakit jika data riwayat medis 'Tidak ada' atau kosong. Jika tidak tahu, anggap AMAN.
+8. Kontraindikasi bersifat MUTLAK (tidak boleh dilanggar).
+9. Jika aman, cek apakah indikasi sesuai dengan keluhan → YA / TIDAK.
+10. Dilarang membuat asumsi penyakit baru. Gunakan hanya data yang tersedia.
 
-FORMAT OUTPUT:
-Analisis: [Satu kalimat teknis tentang korelasi keamanan dan satu kalimat tentang manfaat]
+FORMAT OUTPUT (Tanpa format markdown):
+Analisis: [hanya 2 kalimat singkat yang menjelaskan korelasi manfaat atau bahayanya]
 Keputusan: [YA/TIDAK]"""
 
 # =========================================================
 # EXPLANATION: Penjelasan manfaat herbal yang direkomendasikan
 # =========================================================
-EXPLANATION_PROMPT = """Kamu adalah ahli herbal medis. Jelaskan mengapa herbal ini cocok untuk pasien.
+EXPLANATION_PROMPT = """TUGAS: Jelaskan manfaat herbal secara singkat kepada pasien awam.
 
 Nama Herbal: {nama}
-Keluhan Pasien: {keluhan}
-Indikasi Herbal: {indikasi}
+Keluhan: {keluhan}
+Indikasi: {indikasi}
 
 ATURAN:
-- Jelaskan hubungan antara keluhan pasien dan manfaat herbal ini
-- Sebutkan bagaimana herbal ini membantu kondisi pasien
-- Tambahkan cara konsumsi/pengolahan singkat
-- Maksimal 3 kalimat
-- Gunakan bahasa yang mudah dimengerti pasien awam
-- JANGAN gunakan format markdown seperti **, *, atau #
+- Fokus hanya ke keluhan pasien dan bagaimana indikasi herbal membantunya.
+- Maksimal 3 kalimat.
+- Tambahkan cara konsumsi/pengolahan singkat secara umum.
+- JANGAN gunakan format markdown seperti **, *, atau #.
 
-Output: Langsung tulis paragraf biasa, tanpa judul, label, atau simbol."""
+Output: Paragraf singkat 3 kalimat tanpa label atau judul."""
 
 # =========================================================
 # NON-RAG: Saran herbal tanpa database
 # =========================================================
-NON_RAG_PROMPT = """Kamu adalah asisten kesehatan herbal. Berikan saran herbal yang aman.
+NON_RAG_PROMPT = """TUGAS: Berikan 1 saran herbal umum yang AMAN untuk keluhan: '{keluhan}'.
 
-Keluhan Pasien: {keluhan}
-Riwayat Medis: {riwayat_medis_str}
-Umur: {umur}
+INFORMASI PASIEN:
+- Riwayat Medis: {riwayat_medis_str}
+- Umur: {umur}
 
 ATURAN:
-1. Rekomendasikan 1-2 herbal yang AMAN dan tidak berbenturan dengan riwayat medis pasien
-2. Jika riwayat medis ada, pastikan herbal tidak dikontraindikasikan untuk kondisi tersebut
-3. Jelaskan manfaat dan cara penggunaan singkat
-4. Jika tidak yakin aman, anjurkan konsultasi dokter
-5. Langsung pada inti saran, tanpa pembuka basa-basi
-6. JANGAN gunakan format markdown seperti **, *, #, atau penomoran dengan titik (1. 2.)
+1. Berikan herbal yang secara umum diketahui TIDAK berbenturan dengan {riwayat_medis_str}.
+2. Jika tidak yakin aman, sarankan untuk konsultasi ke dokter.
+3. Jelaskan manfaat herbal yang direkomendasikan dan kenapa aman.
+4. Hindari kalimat pembuka basa-basi. Langsung pada poin utama.
+5. JANGAN gunakan format markdown seperti **, *, #, atau penomoran dengan titik.
 
 Output: Tulis saran dalam paragraf biasa tanpa simbol apapun."""
 

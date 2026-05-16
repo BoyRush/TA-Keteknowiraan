@@ -20,9 +20,9 @@ import sys
 import time
 from dotenv import load_dotenv
 
-# ── Load .env dengan override wajib ──────────────────────────────────────────
-# override=True memastikan nilai dari .env menggantikan environment sistem
-load_dotenv(override=True)
+# ── Load .env tanpa menimpa environment sistem ───────────────────────────────
+# override=False memastikan nilai os.environ["GEMINI_API_KEY"] dari app.py diutamakan
+load_dotenv(override=False)
 
 # ── Ambil API Key dari .env (BUKAN GOOGLE_API_KEY sistem) ────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")

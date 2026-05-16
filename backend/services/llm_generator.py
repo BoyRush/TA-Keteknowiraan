@@ -132,6 +132,11 @@ Jawab hanya daftar kata kunci, dipisah koma. Tanpa penjelasan."""
         # Bersihkan dari karakter non-alfanumerik
         text = re.sub(r"[^a-zA-Z0-9, \-]", "", text.lower())
         keywords = [k.strip() for k in text.split(",") if k.strip() and len(k.strip()) > 2]
+        
+        # Cegah string "tidak" masuk sebagai keyword jika API sedang rate limited
+        if len(keywords) == 1 and keywords[0].lower() == "tidak":
+            keywords = []
+            
         print(f"[KEYWORDS] {keywords}")
         return keywords[:6]
     except Exception as e:
@@ -176,19 +181,21 @@ def evaluate_herb(patient_context: dict, herb: dict, keywords: list = None) -> t
             system_prompt="Medical Decision Engine",
             user_prompt=prompt
         ).strip()
+        
+        response = _clean_ai_text(response)
 
         keputusan = "TIDAK"
         analisis = "Tidak sesuai dengan kondisi medis atau keluhan pasien."
 
         for line in response.split("\n"):
             line = line.strip()
-            if line.startswith("Keputusan:"):
+            if "Keputusan:" in line:
                 val = line.split("Keputusan:")[-1].strip().upper()
                 if "YA" in val:
                     keputusan = "YA"
                 else:
                     keputusan = "TIDAK"
-            if line.startswith("Analisis:"):
+            if "Analisis:" in line:
                 analisis = line.split("Analisis:")[-1].strip()
 
         print(f"  [AI] {nama}: {keputusan} — {analisis[:60]}...")
@@ -245,7 +252,8 @@ def generate_herbal_recommendation(llm_input: dict):
         # ── EVALUASI TIAP HERBAL ──
         final_rekomendasi = []
         for herb in all_candidates:
-            time.sleep(1.5)
+            # Jeda 4 detik untuk mencegah Rate Limit Gemini Free Tier (15 RPM)
+            time.sleep(4.0)
             nama = herb.get("nama") or herb.get("name") or "Herbal"
             print(f"\n--- Evaluasi: {nama} ---")
             keputusan, analisis = evaluate_herb(patient_context, herb, keywords)
