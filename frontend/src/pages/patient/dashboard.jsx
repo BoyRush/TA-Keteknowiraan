@@ -14,7 +14,12 @@ import axios from 'axios';
 export default function PatientDashboard() {
   const { id, username, role, status, loading, isAuthenticated, fullName, refreshMembership } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('beranda');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('patient_activeTab') || 'beranda';
+    }
+    return 'beranda';
+  });
   const [medicalRecords, setMedicalRecords] = useState([]);
   const [pendingDocs, setPendingDocs] = useState([]);
   const [approvedDocs, setApprovedDocs] = useState([]);
@@ -185,6 +190,7 @@ export default function PatientDashboard() {
 
     const handleTabChange = async (newTab) => {
       setActiveTab(newTab);
+      sessionStorage.setItem('patient_activeTab', newTab);
 
       if (newTab === 'notifikasi') {
           try {
@@ -235,6 +241,7 @@ export default function PatientDashboard() {
               medicalRecords={medicalRecords}
               pendingDocs={pendingDocs}
               approvedDocs={approvedDocs}
+              rekomendasiCount={rekomendasiCount}
               changeTab={setActiveTab}
               onGrant={handleGrant}   
               onReject={handleReject}

@@ -14,7 +14,18 @@ const HerbalDashboard = () => {
   const { username, role, isAuthenticated, loading } = useAuth();
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabRaw] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('herbs_activeTab') || 'dashboard';
+    }
+    return 'dashboard';
+  });
+
+  // Wrapper agar setiap perubahan tab juga tersimpan ke sessionStorage
+  const setActiveTab = (tab) => {
+    sessionStorage.setItem('herbs_activeTab', tab);
+    setActiveTabRaw(tab);
+  };
   const [herbalList, setHerbalList] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [isSaving, setIsSaving] = useState(false);

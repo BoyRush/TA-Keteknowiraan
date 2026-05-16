@@ -35,21 +35,7 @@ const TambahHerbal = ({ form, setForm, onSave, isSaving, onCancel }) => {
           </div>
         </div>
 
-        {/* SECTION 1.5: DESKRIPSI */}
-        <div className="section-block mt-30">
-          <div className="section-title">
-            <Info size={18} /> Deskripsi / Penjelasan Botani
-          </div>
-          <div className="input-group">
-            <label>Deskripsi (Opsional)</label>
-            <textarea 
-              className="large-area"
-              placeholder="Contoh: Tanaman perdu dengan tinggi 1-3 meter, kaya akan senyawa andrographolide..."
-              value={form.deskripsi || ""}
-              onChange={(e) => setForm({...form, deskripsi: e.target.value})}
-            />
-          </div>
-        </div>
+
 
         {/* SECTION 2: INDIKASI & KONTRAINDIKASI */}
         <div className="section-block mt-30">

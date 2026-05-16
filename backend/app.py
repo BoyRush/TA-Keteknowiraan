@@ -487,8 +487,20 @@ def get_medical_records(patient_user_id):
         patient = cursor.fetchone()
         if not patient: return jsonify({"error": "Patient profile not found"}), 404
         
-        # Access check
-        if current_user['role'] != 'patient' and current_user['id'] != patient_user_id:
+        # Access check and query logic
+        if current_user['role'] == 'patient':
+            if current_user['id'] != patient_user_id:
+                return jsonify({"error": "Access denied"}), 403
+            
+            cursor.execute("""
+                SELECT m.id, m.diagnosis, m.symptoms, m.treatment, m.notes, m.created_at, u.full_name as doctor_name 
+                FROM medical_records m
+                JOIN doctors d ON m.doctor_id = d.id
+                JOIN users u ON d.user_id = u.id
+                WHERE m.patient_id = %s
+                ORDER BY m.created_at DESC
+            """, (patient['id'],))
+        else:
             # Check if current_user is a doctor with permission
             cursor.execute("SELECT id FROM doctors WHERE user_id = %s", (current_user['id'],))
             doctor = cursor.fetchone()
@@ -498,15 +510,17 @@ def get_medical_records(patient_user_id):
             perm = cursor.fetchone()
             if not perm or perm['status'] != 'approved':
                 return jsonify({"error": "Access denied"}), 403
-                
-        cursor.execute("""
-            SELECT m.id, m.diagnosis, m.symptoms, m.treatment, m.notes, m.created_at, u.full_name as doctor_name 
-            FROM medical_records m
-            JOIN doctors d ON m.doctor_id = d.id
-            JOIN users u ON d.user_id = u.id
-            WHERE m.patient_id = %s
-            ORDER BY m.created_at DESC
-        """, (patient['id'],))
+            
+            # Doctor only sees their own inputs for this patient
+            cursor.execute("""
+                SELECT m.id, m.diagnosis, m.symptoms, m.treatment, m.notes, m.created_at, u.full_name as doctor_name 
+                FROM medical_records m
+                JOIN doctors d ON m.doctor_id = d.id
+                JOIN users u ON d.user_id = u.id
+                WHERE m.patient_id = %s AND m.doctor_id = %s
+                ORDER BY m.created_at DESC
+            """, (patient['id'], doctor['id']))
+            
         records = cursor.fetchall()
         
         for r in records:
@@ -515,6 +529,74 @@ def get_medical_records(patient_user_id):
         cursor.close()
         conn.close()
         return jsonify({"status": "success", "records": records}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/records/medical/<int:record_id>", methods=["PUT"])
+@jwt_required()
+def update_medical_record(record_id):
+    current_user = json.loads(get_jwt_identity())
+    if current_user['role'] not in ['doctor', 'herbal_doctor']: 
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    data = request.get_json() or {}
+    diagnosis = data.get("diagnosis")
+    symptoms = data.get("symptoms")
+    treatment = data.get("treatment")
+    notes = data.get("notes")
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get doctor internal ID
+        cursor.execute("SELECT id FROM doctors WHERE user_id = %s", (current_user['id'],))
+        doctor = cursor.fetchone()
+        if not doctor: return jsonify({"error": "Doctor profile not found"}), 404
+        
+        # Verify ownership
+        cursor.execute("SELECT * FROM medical_records WHERE id = %s AND doctor_id = %s", (record_id, doctor['id']))
+        record = cursor.fetchone()
+        if not record:
+            return jsonify({"error": "Record not found or access denied"}), 404
+            
+        cursor.execute(
+            "UPDATE medical_records SET diagnosis = %s, symptoms = %s, treatment = %s, notes = %s WHERE id = %s",
+            (diagnosis, symptoms, treatment, notes, record_id)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"status": "success", "message": "Record updated"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/records/medical/<int:record_id>", methods=["DELETE"])
+@jwt_required()
+def delete_medical_record(record_id):
+    current_user = json.loads(get_jwt_identity())
+    if current_user['role'] not in ['doctor', 'herbal_doctor']: 
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("SELECT id FROM doctors WHERE user_id = %s", (current_user['id'],))
+        doctor = cursor.fetchone()
+        if not doctor: return jsonify({"error": "Doctor profile not found"}), 404
+        
+        # Verify ownership
+        cursor.execute("SELECT * FROM medical_records WHERE id = %s AND doctor_id = %s", (record_id, doctor['id']))
+        record = cursor.fetchone()
+        if not record:
+            return jsonify({"error": "Record not found or access denied"}), 404
+            
+        cursor.execute("DELETE FROM medical_records WHERE id = %s", (record_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"status": "success", "message": "Record deleted"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -697,7 +779,10 @@ def get_doctor_patients():
         if not doctor: return jsonify({"status": "success", "patients": []})
 
         cursor.execute("""
-            SELECT u.id as patient_user_id, u.full_name as patient_name, a.status 
+            SELECT u.id as patient_user_id, u.full_name as patient_name, a.status,
+                   (SELECT diagnosis FROM medical_records m 
+                    WHERE m.patient_id = p.id 
+                    ORDER BY created_at DESC LIMIT 1) as active_diagnosis
             FROM access_permissions a
             JOIN patients p ON a.patient_id = p.id
             JOIN users u ON p.user_id = u.id
@@ -1029,9 +1114,9 @@ def herbal_delete(herbal_id):
         if not herbal:
             return jsonify({"error": "Data herbal tidak ditemukan atau bukan milik Anda."}), 404
 
-        # 1. Soft-delete di MySQL
+        # 1. Hard-delete di MySQL
         cursor.execute(
-            "UPDATE herbal_catalogs SET is_active = FALSE WHERE id = %s",
+            "DELETE FROM herbal_catalogs WHERE id = %s",
             (herbal_id,)
         )
 
@@ -1112,9 +1197,15 @@ def search_herbal_api():
 
         # PROSES AI — RAG Pipeline (sesuai implementation plan)
         if use_rag:
+            # STEP 0: Enrich Query with Medical Keywords (Symptoms Awareness)
+            from services.llm_generator import extract_medical_keywords
+            keywords = extract_medical_keywords(query)
+            enriched_query = f"{query} {' '.join(keywords)}"
+            print(f"🔍 [RAG] Enriched Query: {enriched_query}")
+
             # STEP 1: Semantic Search via ChromaDB + Distance Filter
-            # retrieve_relevant_herbs() membuang hasil dengan jarak > 0.4 (tidak relevan)
-            herbs = retrieve_relevant_herbs(query, k=3)
+            # retrieve_relevant_herbs() membuang hasil dengan jarak > 0.6 (tidak relevan)
+            herbs = retrieve_relevant_herbs(enriched_query, k=5)
             print(f"📦 Herbal ditemukan setelah distance filter: {len(herbs)}")
 
             if not herbs:

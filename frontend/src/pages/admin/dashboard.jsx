@@ -12,7 +12,18 @@ import ProfilSaya from '../../components/ProfilSaya';
 export default function AdminDashboard() {
   const { id, username, role, loading: authLoading, isAuthenticated } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabRaw] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('admin_activeTab') || 'dashboard';
+    }
+    return 'dashboard';
+  });
+
+  // Wrapper agar setiap perubahan tab tersimpan ke sessionStorage
+  const setActiveTab = (tab) => {
+    sessionStorage.setItem('admin_activeTab', tab);
+    setActiveTabRaw(tab);
+  };
   
   const [adminData, setAdminData] = useState({
     stats: { total_pengguna: 0, pending_verif: 0, pasien: 0, dokter_medis: 0, dokter_herbal: 0 },

@@ -24,7 +24,7 @@ export default function PasienSaya({ changeTab }) {
                         id: p.patient_user_id,
                         name: p.patient_name || "Pasien",
                         date: "9 Mei 2026", // Simplified for now
-                        category: "Hematology" // Placeholder like in screenshot
+                        category: p.active_diagnosis || "Belum ada riwayat"
                     }));
                 setPatients(mapped);
             } catch (err) {

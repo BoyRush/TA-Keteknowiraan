@@ -1,38 +1,55 @@
-def filter_herbs_by_medical_condition(herbs, patient_conditions, user_query):
+"""
+rules/medical_rules.py
+=========================================================
+Filter keamanan herbal berdasarkan riwayat medis pasien.
+Menggunakan string-matching sebagai PRIMARY check (cepat & andal),
+dan AI sebagai SECONDARY check (untuk kasus ambigu).
+"""
+from services.llm_generator import is_medical_clash
+
+def filter_herbs_by_medical_condition(herbs: list, patient_conditions: list, user_query: str) -> list:
     """
-    herbs: List herbal hasil RAG
-    patient_conditions: List riwayat dari Blockchain (ICD-10 labels)
-    user_query: Teks keluhan pasien saat ini (ICD-10 label dari dropdown)
+    Saring herbal yang AMAN untuk pasien berdasarkan riwayat medis dan keluhan saat ini.
+
+    Args:
+        herbs: List herbal hasil ChromaDB retrieval
+        patient_conditions: List riwayat medis pasien dari database
+        user_query: Keluhan pasien saat ini (digunakan sebagai konteks, bukan filter ketat)
+
+    Returns:
+        List herbal yang lolos safety filter
     """
+    if not patient_conditions:
+        # Jika tidak ada riwayat medis, semua herbal dianggap aman
+        print(f"  ℹ️ [SAFETY] Tidak ada riwayat medis → semua {len(herbs)} herbal lolos")
+        return herbs
+
     safe_herbs = []
-    
+
     for herb in herbs:
-        is_safe = True
-        # Ambil metadata kontraindikasi dari ChromaDB
-        pantangan = herb.get('kontraindikasi', "").lower()
-        nama_herbal = herb.get('nama')
+        nama_herbal = herb.get("nama") or herb.get("name") or "Unknown"
+        pantangan = str(herb.get("kontraindikasi", "")).lower().strip()
 
-        # --- RULE 1: CEK RIWAYAT MEDIS (BLOCKCHAIN) ---
-        for condition in patient_conditions:
-            if condition.lower().strip() in pantangan:
-                print(f"❌ BLOKIR KRITIS: {nama_herbal} dilarang karena riwayat {condition}")
-                is_safe = False
-                break
-        
-        if not is_safe: continue
-
-        # --- RULE 2: CEK KELUHAN SAAT INI (USER INPUT) ---
-        if user_query.lower().strip() in pantangan:
-            print(f"⚠️ BLOKIR KELUHAN: {nama_herbal} kontra dengan keluhan saat ini ({user_query})")
-            is_safe = False
+        # Jika tidak ada kontraindikasi, langsung lolos
+        if not pantangan or pantangan in ["tidak ada", "-", "none", ""]:
+            safe_herbs.append(herb)
             continue
 
-        # --- RULE 3: CEK RELEVANSI (EMBEDDING / EXACT MATCH) ---
-        indikasi = herb.get('indikasi', "").lower()
-        if user_query.lower().strip() not in indikasi:
-            print(f"ℹ️ INFO: {nama_herbal} mungkin kurang relevan, tapi lanjut ke evaluasi AI.")
+        is_safe = True
+
+        # Cek setiap kondisi medis pasien terhadap kontraindikasi herbal
+        for condition in patient_conditions:
+            if not condition:
+                continue
+
+            if is_medical_clash(condition, pantangan):
+                print(f"  ❌ [SAFETY BLOCK] {nama_herbal} DITOLAK: '{condition}' bentrok dengan kontraindikasi '{pantangan}'")
+                is_safe = False
+                break
 
         if is_safe:
             safe_herbs.append(herb)
-            
+            print(f"  ✅ [SAFETY PASS] {nama_herbal} lolos safety filter")
+
+    print(f"\n  📊 Safety Filter: {len(safe_herbs)}/{len(herbs)} herbal lolos\n")
     return safe_herbs

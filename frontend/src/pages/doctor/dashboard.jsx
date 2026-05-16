@@ -14,18 +14,25 @@ import ProfilSaya from '../../components/ProfilSaya';
 const DoctorDashboard = () => {
   const { id, username, fullName, role, status, loading, isAuthenticated } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('doctor_activeTab') || 'dashboard';
+    }
+    return 'dashboard';
+  });
   const [patientAddr, setPatientAddr] = useState(''); 
   const [txLoading, setTxLoading] = useState(false);
   const [notifs, setNotifs] = useState([]); 
   const [patientsHistory, setPatientsHistory] = useState([]);
   
   const [medicalData, setMedicalData] = useState({
+    id: null,
     diagnosis: '',
     symptoms: '',
     treatment: '',
     notes: ''
   });
+  const [isEditMode, setIsEditMode] = useState(false);
   
   const [approvedDocs, setApprovedDocs] = useState([]); 
   const [pendingDocs, setPendingDocs] = useState([]);
@@ -70,18 +77,32 @@ const DoctorDashboard = () => {
       setTxLoading(true);
       try {
           const token = localStorage.getItem('herbalchain_token');
-          await axios.post(`http://127.0.0.1:5000/records/medical`, {
-              patient_user_id: patientAddr,
-              ...medicalData
-          }, {
-              headers: { Authorization: `Bearer ${token}` }
-          });
+          if (isEditMode && medicalData.id) {
+              await axios.put(`http://127.0.0.1:5000/records/medical/${medicalData.id}`, {
+                  diagnosis: medicalData.diagnosis,
+                  symptoms: medicalData.symptoms,
+                  treatment: medicalData.treatment,
+                  notes: medicalData.notes
+              }, {
+                  headers: { Authorization: `Bearer ${token}` }
+              });
+              alert(`Data Medis Berhasil Diperbarui!`);
+          } else {
+              await axios.post(`http://127.0.0.1:5000/records/medical`, {
+                  patient_user_id: patientAddr,
+                  ...medicalData
+              }, {
+                  headers: { Authorization: `Bearer ${token}` }
+              });
+              alert(`Data Medis Berhasil Disimpan!`);
+          }
 
-          alert(`Data Medis Berhasil Disimpan!`);
-          setMedicalData({ diagnosis: '', symptoms: '', treatment: '', notes: '' });
+          setMedicalData({ id: null, diagnosis: '', symptoms: '', treatment: '', notes: '' });
           setPatientAddr('');
+          setIsEditMode(false);
           setActiveTab('dashboard'); 
           loadPatientStatus();
+          fetchMedicalHistory();
       } catch (error) {
           alert("Gagal menyimpan: " + (error.response?.data?.error || error.message));
       } finally {
@@ -89,8 +110,39 @@ const DoctorDashboard = () => {
       }
   };
 
+  const handleEditRecord = (rec) => {
+      setPatientAddr(rec.patientId);
+      setMedicalData({
+          id: rec.id,
+          diagnosis: rec.diagnosis || '',
+          symptoms: rec.symptoms || '',
+          treatment: rec.treatment || '',
+          notes: rec.notes || ''
+      });
+      setIsEditMode(true);
+      setActiveTab('input');
+  };
+
+  const handleDeleteRecord = async (recordId) => {
+      if (!confirm("Yakin ingin menghapus rekam medis ini?")) return;
+      setTxLoading(true);
+      try {
+          const token = localStorage.getItem('herbalchain_token');
+          await axios.delete(`http://127.0.0.1:5000/records/medical/${recordId}`, {
+              headers: { Authorization: `Bearer ${token}` }
+          });
+          alert("Rekam medis berhasil dihapus.");
+          fetchMedicalHistory();
+      } catch (error) {
+          alert("Gagal menghapus: " + (error.response?.data?.error || error.message));
+      } finally {
+          setTxLoading(false);
+      }
+  };
+
   const handleTabChange = async (newTab) => {
     setActiveTab(newTab);
+    sessionStorage.setItem('doctor_activeTab', newTab);
     if (newTab === 'notifikasi') {
         try {
             const token = localStorage.getItem('herbalchain_token');
@@ -167,6 +219,9 @@ const DoctorDashboard = () => {
               patientName: r.patient_name,
               patientId: r.patient_user_id,
               diagnosis: r.diagnosis,
+              symptoms: r.symptoms,
+              treatment: r.treatment,
+              notes: r.notes,
               date: new Date(r.created_at).toLocaleDateString('id-ID', {
                   day: 'numeric', month: 'short', year: 'numeric'
               }),
@@ -237,7 +292,7 @@ const DoctorDashboard = () => {
                 setMedicalData={setMedicalData}
                 handleSave={handleSaveMedicalData}
                 txLoading={txLoading}
-                isEditMode={false}
+                isEditMode={isEditMode}
             />
         )}
 
@@ -249,6 +304,8 @@ const DoctorDashboard = () => {
             <RiwayatInput 
                 patientsHistory={patientsHistory}
                 txLoading={txLoading}
+                onEdit={handleEditRecord}
+                onDelete={handleDeleteRecord}
             />
         )}
 

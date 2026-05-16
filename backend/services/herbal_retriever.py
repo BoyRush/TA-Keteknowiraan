@@ -1,5 +1,5 @@
 from chroma.herbal_store import search_herbal
-def retrieve_relevant_herbs(query, k=2):
+def retrieve_relevant_herbs(query, k=5):
     result = search_herbal(query, n_results=k)
     herbs = []
     
@@ -12,7 +12,7 @@ def retrieve_relevant_herbs(query, k=2):
             nama_herb = metadata.get("nama", "Herbal")
 
 
-            if distance > 0.4: 
+            if distance > 0.6: 
                 print(f"⏩ SKIP: {metadata.get('nama')} dibuang karena terlalu tidak nyambung (Dist: {distance:.4f})")
                 continue
 

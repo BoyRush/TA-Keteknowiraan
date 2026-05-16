@@ -102,6 +102,12 @@ export const AuthProvider = ({ children }) => {
                     return { success: true };
                 }
 
+                // Reset sessionStorage tab saat login agar selalu mulai dari dashboard
+                sessionStorage.removeItem('patient_activeTab');
+                sessionStorage.removeItem('doctor_activeTab');
+                sessionStorage.removeItem('herbs_activeTab');
+                sessionStorage.removeItem('admin_activeTab');
+
                 if (userData.role === 'patient') {
                     await refreshMembership();
                     router.push('/patient/dashboard');
@@ -120,6 +126,11 @@ export const AuthProvider = ({ children }) => {
 
     const logout = () => {
         localStorage.removeItem('herbalchain_token');
+        // Bersihkan sessionStorage agar tab tidak tersimpan saat login berikutnya
+        sessionStorage.removeItem('patient_activeTab');
+        sessionStorage.removeItem('doctor_activeTab');
+        sessionStorage.removeItem('herbs_activeTab');
+        sessionStorage.removeItem('admin_activeTab');
         setUser({ username: null, role: null, fullName: null, status: null, id: null, email: null });
         setMembership({
             tier: 'basic',

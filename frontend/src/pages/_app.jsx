@@ -13,24 +13,31 @@ const PROTECTED_ROUTES = {
 const PUBLIC_ROUTES = ["/", "/login", "/register", "/pending-verification"];
 
 function RouteGuard({ children }) {
-  const { isAuthenticated, role, status } = useAuth();
+  const { isAuthenticated, role, status, loading } = useAuth();
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
+    // KRITIS: Jangan ambil keputusan routing sebelum auth selesai loading
+    // Ini mencegah redirect ke /login saat refresh halaman
+    if (loading) return;
+
     const path = router.pathname;
 
+    // Izinkan public routes tanpa autentikasi
     if (PUBLIC_ROUTES.some((pub) => path === pub || path.startsWith(pub + "/"))) {
       setAuthorized(true);
       return;
     }
 
+    // Jika belum login setelah loading selesai, redirect ke login
     if (!isAuthenticated) {
       setAuthorized(false);
       router.replace("/login");
       return;
     }
 
+    // Cek apakah role sesuai dengan path
     const matchedPrefix = Object.keys(PROTECTED_ROUTES).find((prefix) =>
       path.startsWith(prefix)
     );
@@ -39,11 +46,11 @@ function RouteGuard({ children }) {
       const allowedRoles = PROTECTED_ROUTES[matchedPrefix];
       if (!allowedRoles.includes(role)) {
         setAuthorized(false);
-        if (role === "doctor")        router.replace("/doctor/dashboard");
+        if (role === "doctor")             router.replace("/doctor/dashboard");
         else if (role === "herbal_doctor") router.replace("/herbs/dashboard");
-        else if (role === "patient")  router.replace("/patient/dashboard");
-        else if (role === "admin")    router.replace("/admin/dashboard");
-        else router.replace("/login");
+        else if (role === "patient")       router.replace("/patient/dashboard");
+        else if (role === "admin")         router.replace("/admin/dashboard");
+        else                               router.replace("/login");
         return;
       }
     }
@@ -55,7 +62,28 @@ function RouteGuard({ children }) {
     }
 
     setAuthorized(true);
-  }, [router.pathname, isAuthenticated, role, status]);
+  }, [router.pathname, isAuthenticated, role, status, loading]);
+
+  // Saat loading auth, tampilkan layar loading bukan redirect
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        background: '#f8fdf9',
+        fontFamily: 'Inter, sans-serif',
+        color: '#2e7d32',
+        fontSize: '16px',
+        fontWeight: 600,
+        gap: '12px'
+      }}>
+        <span style={{ fontSize: '28px' }}>🌿</span>
+        Memuat SmartHerbal...
+      </div>
+    );
+  }
 
   if (!authorized) return null;
 
