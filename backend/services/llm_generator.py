@@ -7,11 +7,22 @@ Menggunakan Gemini API dengan fallback string-matching untuk ketahanan.
 import json
 import re
 import traceback
+import time
 from services.gemini_model import generate_gemini
 from prompts.herbal_prompt import (
     SAFETY_PROMPT, RELEVANCE_PROMPT,
     EVALUATE_HERB_PROMPT, EXPLANATION_PROMPT, NON_RAG_PROMPT
 )
+
+def _clean_ai_text(text: str) -> str:
+    """Hapus format markdown dari output AI agar tampil bersih di frontend."""
+    # Hapus bold/italic: **teks** atau *teks*
+    text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
+    # Hapus heading: ## atau ###
+    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
+    # Rapikan spasi ganda
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 # =============================================================
 # KAMUS SINONIM: Untuk fallback string-matching ketika AI gagal
@@ -195,7 +206,7 @@ def generate_explanation(nama: str, keluhan: str, indikasi: str) -> str:
     """Generate penjelasan manfaat herbal untuk pasien."""
     prompt = EXPLANATION_PROMPT.format(nama=nama, keluhan=keluhan, indikasi=indikasi)
     try:
-        return generate_gemini("Herbal Expert", prompt).strip()
+        return _clean_ai_text(generate_gemini("Herbal Expert", prompt))
     except Exception:
         return f"{nama} memiliki indikasi untuk {indikasi} yang relevan dengan keluhan Anda. Konsultasikan dengan dokter untuk dosis yang tepat."
 
@@ -234,6 +245,7 @@ def generate_herbal_recommendation(llm_input: dict):
         # ── EVALUASI TIAP HERBAL ──
         final_rekomendasi = []
         for herb in all_candidates:
+            time.sleep(1.5)
             nama = herb.get("nama") or herb.get("name") or "Herbal"
             print(f"\n--- Evaluasi: {nama} ---")
             keputusan, analisis = evaluate_herb(patient_context, herb, keywords)
@@ -273,7 +285,7 @@ def _jalankan_non_rag(keluhan: str, riwayat_medis: list, patient_context: dict) 
     )
 
     try:
-        alasan_umum = generate_gemini("AI Kesehatan Umum", prompt).strip()
+        alasan_umum = _clean_ai_text(generate_gemini("AI Kesehatan Umum", prompt))
     except Exception:
         alasan_umum = f"Untuk keluhan '{keluhan}', disarankan konsultasi dengan dokter atau apoteker untuk mendapatkan saran herbal yang tepat dan aman."
 

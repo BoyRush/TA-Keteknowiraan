@@ -45,53 +45,28 @@ Jawab hanya YA atau TIDAK. Jangan tambahkan penjelasan apapun."""
 # =========================================================
 # EVALUATE: Evaluasi lengkap apakah herbal layak diberikan
 # =========================================================
-EVALUATE_HERB_PROMPT = """Kamu adalah dokter spesialis herbal medis dengan keahlian mendiagnosis penyakit dari gejala/ciri-ciri yang disebutkan pasien.
+EVALUATE_HERB_PROMPT = """Anda adalah Dokter Spesialis Fitofarmaka (Herbal Medis).
 
-TUGAS: Tentukan apakah herbal BOLEH atau TIDAK BOLEH digunakan untuk pasien ini.
+TUGAS: Lakukan validasi kelayakan herbal bagi pasien secara objektif.
 
-============================
-DATA PASIEN:
-============================
-Keluhan/Gejala: {keluhan}
-Keyword Medis Teridentifikasi: {keyword_str}
-Riwayat Medis Aktif: {riwayat_str}
+KONTEKS:
+- Keluhan Pasien: {keluhan}
+- Keyword Medis: {keyword_str}
+- Riwayat Medis: {riwayat_str}
 
-============================
-DATA HERBAL YANG DIEVALUASI:
-============================
-Nama: {nama}
-Indikasi (kegunaan): {indikasi}
-Kontraindikasi (pantangan): {kontra}
+DATA HERBAL:
+- Nama: {nama}
+- Indikasi: {indikasi}
+- Kontraindikasi: {kontra}
 
-============================
-PANDUAN EVALUASI WAJIB:
-============================
+PANDUAN EVALUASI:
+1. VALIDASI KEAMANAN: Periksa apakah Riwayat Medis pasien tercantum secara langsung atau memiliki sinonim klinis dalam daftar Kontraindikasi. Jika ada larangan langsung bagi kondisi riwayat medis pasien, keputusan adalah TIDAK. Jika tidak ada hubungan langsung, anggap AMAN.
+2. VALIDASI MANFAAT: Analisis apakah Indikasi herbal dapat meredakan Keluhan atau Keyword Medis pasien. 
+3. KEPUTUSAN: Berikan YA jika herbal secara medis AMAN bagi riwayat pasien dan RELEVAN bagi keluhannya. Berikan TIDAK hanya jika ada resiko bahaya nyata atau ketidaksesuaian manfaat yang besar.
 
-LANGKAH 1 — CEK KONTRAINDIKASI (Prioritas Mutlak):
-- Jika Riwayat Medis pasien COCOK atau SINONIM dengan Kontraindikasi herbal → Keputusan: TIDAK
-- Contoh: Riwayat "Hipertensi" cocok dengan kontraindikasi "hipertensi" atau "tekanan darah tinggi" → TOLAK
-- Jika Riwayat Medis "Tidak ada" → lewati langkah ini, anggap AMAN
-
-LANGKAH 2 — CEK RELEVANSI GEJALA:
-- Pertimbangkan bahwa pasien TIDAK SELALU menyebut nama penyakitnya secara langsung
-- Pasien bisa mendeskripsikan CIRI-CIRI penyakit, contoh:
-  * "sering haus, buang air kecil banyak, lemas, berat badan turun" = gejala DIABETES
-  * "kepala pusing, leher kaku, pandangan kabur" = gejala HIPERTENSI  
-  * "nyeri sendi, bengkak, kaku pagi hari" = gejala ARTHRITIS
-- Jika keluhan/gejala pasien secara klinis merupakan ciri dari kondisi yang diindikasikan herbal → YA
-- Jika tidak ada keterkaitan sama sekali antara gejala dan indikasi → TIDAK
-
-LANGKAH 3 — KESIMPULAN:
-- Jika LULUS langkah 1 (aman) DAN LULUS langkah 2 (relevan) → Keputusan: YA
-- Jika GAGAL salah satu → Keputusan: TIDAK
-
-============================
-FORMAT JAWABAN:
-============================
-Analisis: [2 kalimat: sebutkan apakah gejala cocok dengan indikasi dan apakah ada kontraindikasi]
-Keputusan: [YA/TIDAK]
-
-PENTING: Hanya tulis format di atas. Jangan tambahkan kalimat lain."""
+FORMAT OUTPUT:
+Analisis: [Satu kalimat teknis tentang korelasi keamanan dan satu kalimat tentang manfaat]
+Keputusan: [YA/TIDAK]"""
 
 # =========================================================
 # EXPLANATION: Penjelasan manfaat herbal yang direkomendasikan
@@ -108,8 +83,9 @@ ATURAN:
 - Tambahkan cara konsumsi/pengolahan singkat
 - Maksimal 3 kalimat
 - Gunakan bahasa yang mudah dimengerti pasien awam
+- JANGAN gunakan format markdown seperti **, *, atau #
 
-Output: Langsung tulis paragraf, tanpa judul atau label."""
+Output: Langsung tulis paragraf biasa, tanpa judul, label, atau simbol."""
 
 # =========================================================
 # NON-RAG: Saran herbal tanpa database
@@ -126,8 +102,9 @@ ATURAN:
 3. Jelaskan manfaat dan cara penggunaan singkat
 4. Jika tidak yakin aman, anjurkan konsultasi dokter
 5. Langsung pada inti saran, tanpa pembuka basa-basi
+6. JANGAN gunakan format markdown seperti **, *, #, atau penomoran dengan titik (1. 2.)
 
-Output: Langsung tulis saran."""
+Output: Tulis saran dalam paragraf biasa tanpa simbol apapun."""
 
 # =========================================================
 # REASONER: Prompt komprehensif untuk generate rekap akhir

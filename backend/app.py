@@ -42,7 +42,7 @@ def get_db_connection():
     return mysql.connector.connect(
         host="localhost",
         user="root",
-        password="root", 
+        password="", 
         database="smartherbal_db",
         port=3306,
         collation="utf8mb4_general_ci"

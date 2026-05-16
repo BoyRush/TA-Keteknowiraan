@@ -17,6 +17,7 @@ from google import genai
 from google.genai import types
 import os
 import sys
+import time
 from dotenv import load_dotenv
 
 # ── Load .env dengan override wajib ──────────────────────────────────────────
@@ -52,11 +53,9 @@ _client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # Urutan model fallback (dari paling diutamakan ke backup)
 GEMINI_MODELS = [
-    "gemini-2.5-flash",        # Free: 20 RPD
-    "gemini-2.5-flash-lite",   # Free: quota lebih besar
-    "gemini-flash-latest",     # Alias model flash terbaru
-    "gemini-2.0-flash",        # Free: tergantung project quota
-    "gemini-2.0-flash-lite",   # Free: fallback terakhir
+    "models/gemini-2.5-flash",      # Utama - terbukti berhasil
+    "models/gemini-2.0-flash",      # Backup pertama
+    "models/gemini-2.0-flash-lite", # Backup ringan
 ]
 
 def generate_gemini(system_prompt: str, user_prompt: str) -> str:
@@ -76,36 +75,43 @@ def generate_gemini(system_prompt: str, user_prompt: str) -> str:
     full_prompt = f"{system_prompt}\n\n{user_prompt}"
 
     for model_name in GEMINI_MODELS:
-        try:
-            response = _client.models.generate_content(
-                model=model_name,
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    max_output_tokens=512,
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                response = _client.models.generate_content(
+                    model=model_name,
+                    contents=full_prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.2,
+                        max_output_tokens=2048,
+                    )
                 )
-            )
 
-            if response and response.text:
-                return response.text.strip()
+                if response and response.text:
+                    return response.text.strip()
 
-        except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                print(f"[Gemini] Model {model_name} rate limited, mencoba model berikutnya...")
-                continue
-            elif "404" in err_str or "not found" in err_str.lower():
-                print(f"[Gemini] Model {model_name} tidak tersedia, mencoba model berikutnya...")
-                continue
-            elif "400" in err_str and "expired" in err_str.lower():
-                print(f"[Gemini] API Key expired! Buat key baru di: https://aistudio.google.com/apikey")
-                break
-            elif "400" in err_str and "invalid" in err_str.lower():
-                print(f"[Gemini] API Key tidak valid! Periksa GEMINI_API_KEY di file .env")
-                break
-            else:
-                print(f"[Gemini] Error pada {model_name}: {err_str[:150]}")
-                continue
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    if attempt < max_retries - 1:
+                        print(f"[Gemini] Model {model_name} rate limited, retry {attempt+1}/{max_retries-1} dalam 5 detik...")
+                        time.sleep(5)
+                        continue
+                    else:
+                        print(f"[Gemini] Model {model_name} rate limited, mencoba model berikutnya...")
+                        break
+                elif "404" in err_str or "not found" in err_str.lower():
+                    print(f"[Gemini] Model {model_name} tidak tersedia, mencoba model berikutnya...")
+                    break
+                elif "400" in err_str and "expired" in err_str.lower():
+                    print(f"[Gemini] API Key expired! Buat key baru di: https://aistudio.google.com/apikey")
+                    return "TIDAK"
+                elif "400" in err_str and "invalid" in err_str.lower():
+                    print(f"[Gemini] API Key tidak valid! Periksa GEMINI_API_KEY di file .env")
+                    return "TIDAK"
+                else:
+                    print(f"[Gemini] Error pada {model_name}: {err_str[:150]}")
+                    break
 
     print("[Gemini] Semua model gagal. Pastikan GEMINI_API_KEY di .env sudah benar.")
     return "TIDAK"
