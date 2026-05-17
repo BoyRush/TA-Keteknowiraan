@@ -807,9 +807,129 @@ def get_doctor_patients():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/doctor/dashboard/stats", methods=["GET"])
+@jwt_required()
+def get_doctor_dashboard_stats():
+    current_user = json.loads(get_jwt_identity())
+    if current_user['role'] not in ['doctor', 'herbal_doctor']:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # Ambil internal doctor ID
+        cursor.execute("SELECT id FROM doctors WHERE user_id = %s", (current_user['id'],))
+        doctor = cursor.fetchone()
+        if not doctor:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                "stats": {"active": 0, "pending": 0, "rejected": 0, "totalInput": 0},
+                "activePatients": [],
+                "recentRequests": [],
+                "recentInputs": []
+            }), 200
+
+        doctor_id = doctor['id']
+
+        # --- 1. Hitung statistik akses ---
+        cursor.execute("""
+            SELECT
+                SUM(a.status = 'approved') AS active,
+                SUM(a.status = 'pending')  AS pending,
+                SUM(a.status = 'rejected') AS rejected
+            FROM access_permissions a
+            WHERE a.doctor_id = %s
+        """, (doctor_id,))
+        counts = cursor.fetchone()
+
+        # --- 2. Total rekam medis yang diinput dokter ini ---
+        cursor.execute(
+            "SELECT COUNT(*) AS total FROM medical_records WHERE doctor_id = %s",
+            (doctor_id,)
+        )
+        total_input = cursor.fetchone()['total']
+
+        # --- 3. Daftar pasien aktif (approved) ---
+        cursor.execute("""
+            SELECT u.id AS patient_user_id, u.full_name AS patient_name,
+                   a.approved_at
+            FROM access_permissions a
+            JOIN patients p ON a.patient_id = p.id
+            JOIN users u ON p.user_id = u.id
+            WHERE a.doctor_id = %s AND a.status = 'approved'
+            ORDER BY a.approved_at DESC
+            LIMIT 5
+        """, (doctor_id,))
+        active_patients_raw = cursor.fetchall()
+        active_patients = [{
+            "id": r['patient_user_id'],
+            "name": r['patient_name'],
+            "date": r['approved_at'].strftime('%d %b %Y') if r['approved_at'] else '-',
+            "status": "Aktif"
+        } for r in active_patients_raw]
+
+        # --- 4. Request terbaru semua status ---
+        cursor.execute("""
+            SELECT u.id AS patient_user_id, u.full_name AS patient_name,
+                   a.status, a.requested_at
+            FROM access_permissions a
+            JOIN patients p ON a.patient_id = p.id
+            JOIN users u ON p.user_id = u.id
+            WHERE a.doctor_id = %s
+            ORDER BY a.requested_at DESC
+            LIMIT 5
+        """, (doctor_id,))
+        recent_requests_raw = cursor.fetchall()
+        status_map = {'approved': 'Aktif', 'pending': 'Menunggu', 'rejected': 'Ditolak'}
+        recent_requests = [{
+            "id": r['patient_user_id'],
+            "name": r['patient_name'],
+            "date": r['requested_at'].strftime('%d %b %Y') if r['requested_at'] else '-',
+            "status": status_map.get(r['status'], r['status'])
+        } for r in recent_requests_raw]
+
+        # --- 5. Riwayat input medis terbaru ---
+        cursor.execute("""
+            SELECT m.id, m.diagnosis, m.created_at,
+                   u.full_name AS patient_name
+            FROM medical_records m
+            JOIN patients p ON m.patient_id = p.id
+            JOIN users u ON p.user_id = u.id
+            WHERE m.doctor_id = %s
+            ORDER BY m.created_at DESC
+            LIMIT 5
+        """, (doctor_id,))
+        recent_inputs_raw = cursor.fetchall()
+        recent_inputs = [{
+            "patientName": r['patient_name'],
+            "date": r['created_at'].strftime('%d %b %Y') if r['created_at'] else '-',
+            "tags": [r['diagnosis'].split(',')[0].strip()] if r['diagnosis'] else []
+        } for r in recent_inputs_raw]
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "stats": {
+                "active":      int(counts['active']  or 0),
+                "pending":     int(counts['pending'] or 0),
+                "rejected":    int(counts['rejected'] or 0),
+                "totalInput":  int(total_input)
+            },
+            "activePatients": active_patients,
+            "recentRequests": recent_requests,
+            "recentInputs":   recent_inputs
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/patient/dashboard/stats", methods=["GET"])
 @jwt_required()
 def get_patient_dashboard_stats():
+
     current_user = json.loads(get_jwt_identity())
     try:
         conn = get_db_connection()
@@ -1356,27 +1476,31 @@ def mark_read():
 # 6. PREMIUM TOKEN MANAGEMENT
 # ==========================================
 
-@app.route("/sh/admin/tokens/generate", methods=["POST"])
+@app.route("/sh/admin/tokens/generate", methods=["POST", "OPTIONS"])
 @jwt_required()
 def sh_admin_generate_token():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "OK"}), 200
+
     current_user = json.loads(get_jwt_identity())
     if current_user['role'] != 'admin':
         return jsonify({"error": "Unauthorized"}), 403
 
     chars = string.ascii_uppercase + string.digits
-    token = "SH-" + ''.join(secrets.choice(chars) for _ in range(8))
-    
+    token_code = "SH-" + ''.join(secrets.choice(chars) for _ in range(8))
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO sh_premium_tokens (token_code) VALUES (%s)",
-            (token,)
+            (token_code,)
         )
         conn.commit()
+        new_id = cursor.lastrowid
         cursor.close()
         conn.close()
-        return jsonify({"status": "success", "token": token}), 201
+        return jsonify({"status": "success", "token": token_code}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1390,12 +1514,18 @@ def sh_admin_list_tokens():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM sh_premium_tokens ORDER BY created_at DESC")
+        cursor.execute("""
+            SELECT t.id, t.token_code, t.status, t.created_at, t.used_at,
+                   u.username AS used_by
+            FROM sh_premium_tokens t
+            LEFT JOIN users u ON t.used_by_user_id = u.id
+            ORDER BY t.created_at DESC
+        """)
         tokens = cursor.fetchall()
         for t in tokens:
-            if isinstance(t['created_at'], datetime): 
+            if t['created_at'] and hasattr(t['created_at'], 'isoformat'):
                 t['created_at'] = t['created_at'].isoformat()
-            if t['used_at'] and isinstance(t['used_at'], datetime): 
+            if t['used_at'] and hasattr(t['used_at'], 'isoformat'):
                 t['used_at'] = t['used_at'].isoformat()
         cursor.close()
         conn.close()
@@ -1424,73 +1554,102 @@ def sh_admin_delete_token(id):
         return jsonify({"error": str(e)}), 500
 
 @app.route("/sh/membership/activate-token", methods=["POST", "OPTIONS"])
+@jwt_required(optional=True)
 def sh_activate_token():
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
-        
-    @jwt_required()
-    def process_activation():
-        current_user = json.loads(get_jwt_identity())
-        try:
-            data = request.get_json() or {}
-        except:
-            data = {}
-            
-        token = data.get("token", "").strip().upper()
-        user_id = current_user['id']
-        
-        if not token:
-            return jsonify({"error": "Token wajib diisi"}), 400
 
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            
-            # Check token validity
-            cursor.execute("SELECT * FROM sh_premium_tokens WHERE token_code = %s", (token,))
+    current_user_raw = get_jwt_identity()
+    if not current_user_raw:
+        return jsonify({"error": "Unauthorized. Token JWT tidak ditemukan atau tidak valid."}), 401
+
+    current_user = json.loads(current_user_raw)
+    user_id = current_user['id']
+
+    try:
+        data = request.get_json() or {}
+    except Exception:
+        data = {}
+
+    token = data.get("token", "").strip().upper()
+
+    if not token:
+        return jsonify({"error": "Token wajib diisi"}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # Check token validity di tabel baru
+        cursor.execute("SELECT * FROM sh_premium_tokens WHERE token_code = %s", (token,))
+        payment = cursor.fetchone()
+        is_legacy = False
+
+        if not payment:
+            # Fallback ke tabel lama
+            cursor.execute("SELECT * FROM sh_manual_payments WHERE activation_token = %s", (token,))
             payment = cursor.fetchone()
-            is_legacy = False
-            
-            if not payment:
-                # Fallback to old table
-                cursor.execute("SELECT * FROM sh_manual_payments WHERE activation_token = %s", (token,))
-                payment = cursor.fetchone()
-                is_legacy = True
-                
-            if not payment:
-                return jsonify({"error": "Token tidak valid"}), 400
-                
-            if (not is_legacy and payment["status"] == "USED") or (is_legacy and payment.get("status") == "approved" and payment.get("user_id") != user_id):
-                return jsonify({"error": "Token sudah digunakan"}), 400
-                
-            # Get current user premium status
-            cursor.execute("SELECT premium_until FROM users WHERE id = %s", (user_id,))
-            user = cursor.fetchone()
-            
-            curr_until = user["premium_until"] if user and user["premium_until"] and user["premium_until"] > datetime.now() else datetime.now()
-            new_until = curr_until + timedelta(days=30)
-            
-            # Update user status
-            cursor.execute("UPDATE users SET membership_tier = 'premium', premium_until = %s WHERE id = %s", (new_until, user_id))
-            
-            # Mark token as used
-            if is_legacy:
-                cursor.execute("UPDATE sh_manual_payments SET status = 'approved' WHERE id = %s", (payment["id"],))
-            else:
-                cursor.execute("UPDATE sh_premium_tokens SET status = 'USED', used_by_user_id = %s, used_at = NOW() WHERE id = %s", (user_id, payment["id"]))
-            
-            # Add notification
-            add_notification_by_id(user_id, f"✨ Premium aktif hingga {new_until.strftime('%d %B %Y')}! Nikmati akses tak terbatas.")
-            
-            conn.commit()
+            is_legacy = True
+
+        if not payment:
             cursor.close()
             conn.close()
-            
-            return jsonify({"status": "success", "premium_until": new_until.isoformat()}), 200
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "Token tidak valid atau tidak ditemukan"}), 400
 
-    return process_activation()
+        # Cek apakah token sudah digunakan
+        if not is_legacy and payment["status"] == "USED":
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "Token sudah pernah digunakan"}), 400
+        if is_legacy and payment.get("status") == "approved" and payment.get("user_id") != user_id:
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "Token sudah pernah digunakan"}), 400
+
+        # Ambil status premium user saat ini
+        cursor.execute("SELECT premium_until FROM users WHERE id = %s", (user_id,))
+        user = cursor.fetchone()
+
+        curr_until = (
+            user["premium_until"]
+            if user and user["premium_until"] and user["premium_until"] > datetime.now()
+            else datetime.now()
+        )
+        new_until = curr_until + timedelta(days=30)
+
+        # Update status premium user
+        cursor.execute(
+            "UPDATE users SET membership_tier = 'premium', premium_until = %s, recommendation_count = 0 WHERE id = %s",
+            (new_until, user_id)
+        )
+
+        # Tandai token sebagai sudah digunakan
+        if is_legacy:
+            cursor.execute("UPDATE sh_manual_payments SET status = 'approved' WHERE id = %s", (payment["id"],))
+        else:
+            cursor.execute(
+                "UPDATE sh_premium_tokens SET status = 'USED', used_by_user_id = %s, used_at = NOW() WHERE id = %s",
+                (user_id, payment["id"])
+            )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        add_notification_by_id(
+            user_id,
+            f"✨ Premium aktif hingga {new_until.strftime('%d %B %Y')}! Nikmati akses tak terbatas."
+        )
+
+        return jsonify({
+            "status": "success",
+            "message": "Token berhasil diaktivasi!",
+            "premium_until": new_until.isoformat()
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/sh/user/quota-status", methods=["GET"])
 @jwt_required()

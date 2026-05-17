@@ -38,6 +38,12 @@ const DoctorDashboard = () => {
   const [pendingDocs, setPendingDocs] = useState([]);
   const [rejectedDocs, setRejectedDocs] = useState([]); 
 
+  // State khusus untuk dashboard stats dari endpoint baru
+  const [dashStats, setDashStats] = useState({ active: 0, pending: 0, rejected: 0, totalInput: 0 });
+  const [dashActivePatients, setDashActivePatients] = useState([]);
+  const [dashRecentRequests, setDashRecentRequests] = useState([]);
+  const [dashRecentInputs, setDashRecentInputs] = useState([]);
+
   useEffect(() => {
     if (loading) return;
     if (!isAuthenticated) {
@@ -103,6 +109,7 @@ const DoctorDashboard = () => {
           setActiveTab('dashboard'); 
           loadPatientStatus();
           fetchMedicalHistory();
+          fetchDashboardStats();
       } catch (error) {
           alert("Gagal menyimpan: " + (error.response?.data?.error || error.message));
       } finally {
@@ -133,6 +140,7 @@ const DoctorDashboard = () => {
           });
           alert("Rekam medis berhasil dihapus.");
           fetchMedicalHistory();
+          fetchDashboardStats();
       } catch (error) {
           alert("Gagal menghapus: " + (error.response?.data?.error || error.message));
       } finally {
@@ -206,6 +214,29 @@ const DoctorDashboard = () => {
     }
   }, [id, role]);
 
+  // Fetch semua statistik dashboard dari 1 endpoint
+  const fetchDashboardStats = useCallback(async () => {
+    if (!id || !['doctor', 'herbal_doctor'].includes(role)) return;
+    try {
+      const token = localStorage.getItem('herbalchain_token');
+      const res = await axios.get('http://127.0.0.1:5000/doctor/dashboard/stats', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.data;
+      setDashStats(data.stats || { active: 0, pending: 0, rejected: 0, totalInput: 0 });
+      setDashActivePatients(data.activePatients || []);
+      setDashRecentRequests(data.recentRequests || []);
+      setDashRecentInputs(data.recentInputs || []);
+
+      // Sinkronkan juga state lama agar tab lain (RequestAccess, dll) tetap berfungsi
+      setApprovedDocs((data.activePatients || []).map(p => ({ ...p, status: 'Aktif' })));
+      setPendingDocs((data.recentRequests || []).filter(r => r.status === 'Menunggu'));
+      setRejectedDocs((data.recentRequests || []).filter(r => r.status === 'Ditolak'));
+    } catch (error) {
+      console.error('Gagal load dashboard stats:', error);
+    }
+  }, [id, role]);
+
   const fetchMedicalHistory = useCallback(async () => {
     try {
       const token = localStorage.getItem('herbalchain_token');
@@ -239,9 +270,10 @@ const DoctorDashboard = () => {
     if (!loading && username && role === 'doctor') {
       loadPatientStatus();
       fetchMedicalHistory();
+      fetchDashboardStats();
       fetchNotifications();
     }
-  }, [loading, username, role, loadPatientStatus, fetchMedicalHistory, fetchNotifications]);
+  }, [loading, username, role, loadPatientStatus, fetchMedicalHistory, fetchDashboardStats, fetchNotifications]);
 
   const totalSemuaInputan = patientsHistory.length; 
   const allFormattedInputs = patientsHistory.map(h => ({
@@ -257,19 +289,10 @@ const DoctorDashboard = () => {
       <main className="main-content">
       {activeTab === 'dashboard' && (
       <BerandaDokter 
-        stats={{
-          active: approvedDocs.length,
-          pending: pendingDocs.length,
-          totalInput: totalSemuaInputan,
-          rejected: rejectedDocs.length 
-        }}
-        activePatients={approvedDocs.slice(0, 5)}
-        recentRequests={[
-          ...pendingDocs,
-          ...approvedDocs,
-          ...rejectedDocs,
-        ].slice(0, 5)} 
-        recentInputs={allFormattedInputs.slice(0, 5)} 
+        stats={dashStats}
+        activePatients={dashActivePatients}
+        recentRequests={dashRecentRequests}
+        recentInputs={dashRecentInputs}
         changeTab={setActiveTab}
       />
     )}
