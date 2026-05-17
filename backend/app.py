@@ -22,9 +22,13 @@ load_dotenv()
 # ==========================================
 # KONFIGURASI GEMINI API KEY
 # ==========================================
-# API Key diletakkan di sini agar Anda bisa mengubahnya dengan mudah
-# dan server Flask akan otomatis merestart (auto-reload) saat file ini disimpan.
-os.environ["GEMINI_API_KEY"] = "AIzaSyChJxKimo3L0-Fj57EGCrryrUobfac2lgY"
+# API Key dibaca dari file .env — JANGAN pernah hardcode key di sini.
+# Pastikan .env sudah ada di .gitignore agar key tidak ter-commit ke Git.
+_gemini_key = os.environ.get("GEMINI_API_KEY", "")
+if _gemini_key:
+    print(f"[Gemini] API Key loaded dari .env: {_gemini_key[:15]}...")
+else:
+    print("[Gemini] PERINGATAN: GEMINI_API_KEY tidak ditemukan di .env!")
 
 # Existing Chroma & AI logic (adapted to not use IPFS/Web3)
 from chroma.herbal_store import add_herbal, update_herbal, delete_herbal, search_herbal, embedding_functions
@@ -32,7 +36,7 @@ from rules.medical_rules import filter_herbs_by_medical_condition
 from services.llm_generator import generate_herbal_recommendation
 from services.herbal_retriever import retrieve_relevant_herbs
 
-load_dotenv()
+# load_dotenv() sudah dipanggil di atas — tidak perlu duplikat
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
